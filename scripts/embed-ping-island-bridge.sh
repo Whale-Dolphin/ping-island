@@ -38,7 +38,7 @@ for arch in "${archs[@]}"; do
     --scratch-path "$arch_scratch_path" \
     --triple "$arch-apple-macosx$DEPLOYMENT_TARGET"
 
-  bridge_path=$(find "$arch_scratch_path" -type f -path "*/$BUILD_CONFIGURATION/$PRODUCT_NAME" | head -n 1)
+  bridge_path="$arch_scratch_path/$BUILD_CONFIGURATION/$PRODUCT_NAME"
   if [[ -z "$bridge_path" || ! -x "$bridge_path" ]]; then
     echo "error: Failed to build $PRODUCT_NAME for $arch" >&2
     exit 1

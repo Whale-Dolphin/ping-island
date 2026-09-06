@@ -94,8 +94,11 @@ actor CodexRolloutParser {
         var latestFinalText: String?
         var latestFinalPhase: String?
         var phase: SessionPhase = .idle
+        var isTaskRunning: Bool?
         var isTurnInterrupted = false
         var intervention: SessionIntervention?
+        var approvalPolicy: String?
+        var approvalsReviewer: String?
         var sessionName: String?
         var origin: String?
         var originator: String?
@@ -140,6 +143,10 @@ actor CodexRolloutParser {
                 let payload = json["payload"] as? [String: Any] ?? [:]
                 latestTurnId = stringValue(payload["turn_id"]) ?? latestTurnId
                 resolvedCwd = stringValue(payload["cwd"]) ?? resolvedCwd
+                approvalPolicy = stringValue(payload["approval_policy"]) ?? approvalPolicy
+                approvalsReviewer = stringValue(payload["approvals_reviewer"])
+                    ?? stringValue(payload["approvalsReviewer"])
+                    ?? approvalsReviewer
 
             case "event_msg":
                 let payload = json["payload"] as? [String: Any] ?? [:]
@@ -185,10 +192,12 @@ actor CodexRolloutParser {
                     ))
 
                 case "task_started":
+                    isTaskRunning = true
                     isTurnInterrupted = false
                     phase = .processing
 
                 case "task_complete":
+                    isTaskRunning = false
                     if !historyItems.contains(where: Self.isRunningToolItem(_:)) {
                         phase = .idle
                     }
@@ -197,6 +206,7 @@ actor CodexRolloutParser {
                     phase = .compacting
 
                 case "turn_aborted":
+                    isTaskRunning = false
                     isTurnInterrupted = true
                     intervention = nil
                     markRunningToolsInterrupted(in: &historyItems)
@@ -335,6 +345,10 @@ actor CodexRolloutParser {
         } else if isTurnInterrupted {
             markRunningToolsInterrupted(in: &historyItems)
             phase = .idle
+        } else if isTaskRunning == true, phase != .compacting {
+            // A previous turn's final response remains in the rollout. The latest
+            // lifecycle event is authoritative for whether the current task is live.
+            phase = .processing
         } else if historyItems.contains(where: Self.isRunningToolItem(_:)) {
             phase = .processing
         } else if phase == .processing, latestFinalText != nil {
@@ -368,6 +382,10 @@ actor CodexRolloutParser {
             || clientInfo?.iTermSessionIdentifier?.isEmpty == false
 
         if prefersCLIContext,
+           Self.shouldInferPendingMCPApproval(
+               approvalPolicy: approvalPolicy,
+               approvalsReviewer: approvalsReviewer
+           ),
            let inferredIntervention = Self.pendingMCPApprovalIntervention(from: historyItems) {
             intervention = inferredIntervention
             phase = .waitingForInput
@@ -551,6 +569,21 @@ actor CodexRolloutParser {
         }
 
         return nil
+    }
+
+    private static func shouldInferPendingMCPApproval(
+        approvalPolicy: String?,
+        approvalsReviewer: String?
+    ) -> Bool {
+        let normalizedPolicy = approvalPolicy?
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+            .lowercased()
+        let normalizedReviewer = approvalsReviewer?
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+            .lowercased()
+            .replacingOccurrences(of: "-", with: "_")
+
+        return normalizedPolicy != "never" && normalizedReviewer != "auto_review"
     }
 
     private func codexUserInputIntervention(

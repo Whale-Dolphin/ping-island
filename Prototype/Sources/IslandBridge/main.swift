@@ -832,6 +832,9 @@ private enum SocketClient {
 }
 
 private final class RemoteAgentService: @unchecked Sendable {
+    private static let maximumOutboxMessageCount = 4_096
+    private static let maximumOutboxBytes = 16 * 1_024 * 1_024
+
     private let hookSocketPath: String
     private let controlSocketPath: String
     private let queue = DispatchQueue(label: "com.wudanwu.pingisland.remote-agent", qos: .userInitiated)
@@ -844,15 +847,23 @@ private final class RemoteAgentService: @unchecked Sendable {
     private var controlClientReadSource: DispatchSourceRead?
     private var controlReadBuffer = Data()
     private var pendingRequests: [UUID: PendingRemoteBridgeRequest] = [:]
-    private var queuedMessages: [Data] = []
+    private var queuedMessages: [QueuedRemoteMessage] = []
+    private var sentMessageIDs: Set<UUID> = []
     private var codexStateSource: DispatchSourceTimer?
-    private var deliveredCodexThreadUpdates: [String: Int64] = [:]
+    private var deliveredCodexThreadStates: [String: String] = [:]
     private let encoder = JSONEncoder()
     private let decoder = JSONDecoder()
+    private let outboxURL: URL
 
     init(hookSocketPath: String, controlSocketPath: String) throws {
         self.hookSocketPath = hookSocketPath
         self.controlSocketPath = controlSocketPath
+        self.outboxURL = URL(fileURLWithPath: controlSocketPath + ".outbox")
+        self.queuedMessages = Self.loadOutbox(from: self.outboxURL)
+        try? FileManager.default.setAttributes(
+            [.posixPermissions: 0o600],
+            ofItemAtPath: self.outboxURL.path
+        )
     }
 
     func run() {
@@ -933,9 +944,11 @@ private final class RemoteAgentService: @unchecked Sendable {
         let cutoff = Int64(Date().timeIntervalSince1970 * 1000) - 15 * 60 * 1000
         let codexHome = Self.homeDirectory.appendingPathComponent(".codex", isDirectory: true)
         for thread in RemoteCodexStatePoller.readRecentThreads(codexHome: codexHome, updatedSinceMs: cutoff) {
-            guard thread.updatedAtMs > (deliveredCodexThreadUpdates[thread.id] ?? 0) else { continue }
-            deliveredCodexThreadUpdates[thread.id] = thread.updatedAtMs
-            enqueue(RemoteBridgeMessageBuilder.message(from: thread))
+            guard let status = RemoteCodexStatePoller.executionStatus(for: thread) else { continue }
+            let stateFingerprint = "\(thread.updatedAtMs):\(status)"
+            guard deliveredCodexThreadStates[thread.id] != stateFingerprint else { continue }
+            deliveredCodexThreadStates[thread.id] = stateFingerprint
+            enqueue(RemoteBridgeMessageBuilder.message(from: thread, status: status))
         }
     }
 
@@ -982,7 +995,6 @@ private final class RemoteAgentService: @unchecked Sendable {
 
         if payload.expectsResponse {
             guard controlClientSocket >= 0 else {
-                close(clientSocket)
                 return
             }
             pendingRequests[payload.requestID] = PendingRemoteBridgeRequest(
@@ -993,10 +1005,9 @@ private final class RemoteAgentService: @unchecked Sendable {
             )
         }
 
-        enqueue(message)
-
-        if payload.expectsResponse == false {
-            close(clientSocket)
+        guard enqueue(message) else {
+            pendingRequests.removeValue(forKey: payload.requestID)
+            return
         }
     }
 
@@ -1004,34 +1015,37 @@ private final class RemoteAgentService: @unchecked Sendable {
         let clientSocket = accept(controlServerSocket, nil, nil)
         guard clientSocket >= 0 else { return }
 
-        if controlClientSocket >= 0 {
-            close(controlClientSocket)
-            controlClientReadSource?.cancel()
+        if let existingSource = controlClientReadSource {
+            existingSource.cancel()
             controlClientReadSource = nil
+        } else if controlClientSocket >= 0 {
+            close(controlClientSocket)
         }
 
         controlClientSocket = clientSocket
-        sendHello()
-        flushQueuedMessages()
+        controlReadBuffer.removeAll(keepingCapacity: true)
+        sentMessageIDs.removeAll()
 
         controlClientReadSource = DispatchSource.makeReadSource(fileDescriptor: clientSocket, queue: queue)
         controlClientReadSource?.setEventHandler { [weak self] in
-            self?.readControlMessages()
+            self?.readControlMessages(from: clientSocket)
         }
         controlClientReadSource?.setCancelHandler { [weak self] in
-            if let socket = self?.controlClientSocket, socket >= 0 {
-                close(socket)
-                self?.controlClientSocket = -1
-            }
-            self?.failOpenPendingRequests()
+            close(clientSocket)
+            guard let self, self.controlClientSocket == clientSocket else { return }
+            self.controlClientSocket = -1
+            self.failOpenPendingRequests()
         }
         controlClientReadSource?.resume()
+
+        sendHello()
+        flushQueuedMessages()
     }
 
-    private func readControlMessages() {
-        guard controlClientSocket >= 0 else { return }
+    private func readControlMessages(from clientSocket: Int32) {
+        guard controlClientSocket == clientSocket else { return }
         var buffer = [UInt8](repeating: 0, count: 4096)
-        let count = read(controlClientSocket, &buffer, buffer.count)
+        let count = read(clientSocket, &buffer, buffer.count)
         guard count > 0 else {
             controlClientReadSource?.cancel()
             controlClientReadSource = nil
@@ -1044,10 +1058,16 @@ private final class RemoteAgentService: @unchecked Sendable {
             let lineData = controlReadBuffer.subdata(in: 0..<newlineRange.lowerBound)
             controlReadBuffer.removeSubrange(0...newlineRange.lowerBound)
             guard !lineData.isEmpty,
-                  let message = try? decoder.decode(RemoteDecisionEnvelope.self, from: lineData) else {
+                  let message = try? decoder.decode(RemoteControlEnvelope.self, from: lineData) else {
                 continue
             }
-            handleDecision(message)
+            switch message {
+            case .acknowledgement(let acknowledgement):
+                acknowledgeMessage(requestID: acknowledgement.requestID)
+            case .decision(let decision):
+                acknowledgeMessage(requestID: decision.requestID)
+                handleDecision(decision)
+            }
         }
     }
 
@@ -1072,17 +1092,21 @@ private final class RemoteAgentService: @unchecked Sendable {
             return
         }
 
-        _ = data.withUnsafeBytes { buffer in
-            write(pending.clientSocket, buffer.baseAddress, buffer.count)
-        }
+        _ = RemoteAgentIO.writeAll(data, to: pending.clientSocket)
         close(pending.clientSocket)
     }
 
     private func failOpenPendingRequests() {
-        let pendingSockets = pendingRequests.values.map(\.clientSocket)
+        let pending = Array(pendingRequests.values)
         pendingRequests.removeAll()
-        for socket in pendingSockets {
-            close(socket)
+        let requestIDs = Set(pending.map(\.requestID))
+        if !requestIDs.isEmpty {
+            queuedMessages.removeAll { requestIDs.contains($0.requestID) }
+            sentMessageIDs.subtract(requestIDs)
+            persistOutbox()
+        }
+        for request in pending {
+            close(request.clientSocket)
         }
     }
 
@@ -1092,33 +1116,126 @@ private final class RemoteAgentService: @unchecked Sendable {
             version: Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "dev",
             hostname: ProcessInfo.processInfo.hostName
         )
-        enqueue(hello, flushImmediately: true)
+        guard let data = try? encoder.encode(hello) + Data("\n".utf8) else { return }
+        if !writeControlData(data) {
+            controlClientReadSource?.cancel()
+            controlClientReadSource = nil
+        }
     }
 
-    private func enqueue<T: Encodable>(_ message: T, flushImmediately: Bool = false) {
+    @discardableResult
+    private func enqueue(_ message: RemoteHookEventMessage) -> Bool {
         guard let data = try? encoder.encode(message) + Data("\n".utf8) else {
-            return
+            return false
         }
-        queuedMessages.append(data)
-        if queuedMessages.count > 128 {
-            queuedMessages.removeFirst(queuedMessages.count - 128)
+        guard data.count <= Self.maximumOutboxBytes else {
+            FileHandle.standardError.write(
+                Data("Remote outbox rejected an event larger than \(Self.maximumOutboxBytes) bytes\n".utf8)
+            )
+            return false
         }
+        guard !queuedMessages.contains(where: { $0.requestID == message.payload.requestID }) else {
+            return true
+        }
+        queuedMessages.append(QueuedRemoteMessage(
+            requestID: message.payload.requestID,
+            data: data
+        ))
+        trimOutboxIfNeeded()
+        persistOutbox()
 
-        if flushImmediately {
-            flushQueuedMessages()
-        } else if controlClientSocket >= 0 {
+        if controlClientSocket >= 0 {
             flushQueuedMessages()
         }
+        return true
     }
 
     private func flushQueuedMessages() {
         guard controlClientSocket >= 0 else { return }
-        while let message = queuedMessages.first {
-            _ = message.withUnsafeBytes { buffer in
-                write(controlClientSocket, buffer.baseAddress, buffer.count)
+        for message in queuedMessages where !sentMessageIDs.contains(message.requestID) {
+            guard writeControlData(message.data) else {
+                controlClientReadSource?.cancel()
+                controlClientReadSource = nil
+                return
             }
-            queuedMessages.removeFirst()
+            sentMessageIDs.insert(message.requestID)
         }
+    }
+
+    private func acknowledgeMessage(requestID: UUID) {
+        guard let index = queuedMessages.firstIndex(where: { $0.requestID == requestID }) else {
+            return
+        }
+        queuedMessages.remove(at: index)
+        sentMessageIDs.remove(requestID)
+        persistOutbox()
+    }
+
+    private func writeControlData(_ data: Data) -> Bool {
+        guard controlClientSocket >= 0 else { return false }
+        return RemoteAgentIO.writeAll(data, to: controlClientSocket)
+    }
+
+    private func trimOutboxIfNeeded() {
+        var totalBytes = queuedMessages.reduce(0) { $0 + $1.data.count }
+        var removedRequestIDs: [UUID] = []
+        while queuedMessages.count > Self.maximumOutboxMessageCount
+            || totalBytes > Self.maximumOutboxBytes {
+            let removed = queuedMessages.removeFirst()
+            totalBytes -= removed.data.count
+            removedRequestIDs.append(removed.requestID)
+        }
+        guard !removedRequestIDs.isEmpty else { return }
+
+        for requestID in removedRequestIDs {
+            sentMessageIDs.remove(requestID)
+            if let pending = pendingRequests.removeValue(forKey: requestID) {
+                close(pending.clientSocket)
+            }
+        }
+        FileHandle.standardError.write(
+            Data("Remote outbox dropped \(removedRequestIDs.count) oldest event(s) after reaching its safety limit\n".utf8)
+        )
+    }
+
+    private func persistOutbox() {
+        let data = queuedMessages.reduce(into: Data()) { partialResult, message in
+            partialResult.append(message.data)
+        }
+        do {
+            try data.write(to: outboxURL, options: .atomic)
+            try FileManager.default.setAttributes(
+                [.posixPermissions: 0o600],
+                ofItemAtPath: outboxURL.path
+            )
+        } catch {
+            FileHandle.standardError.write(Data("Remote outbox persistence failed: \(error.localizedDescription)\n".utf8))
+        }
+    }
+
+    private static func loadOutbox(from url: URL) -> [QueuedRemoteMessage] {
+        guard let data = try? Data(contentsOf: url), !data.isEmpty else { return [] }
+        let decoder = JSONDecoder()
+        let messages = data
+            .split(separator: 0x0A, omittingEmptySubsequences: true)
+            .compactMap { line -> QueuedRemoteMessage? in
+                let lineData = Data(line)
+                guard let message = try? decoder.decode(RemoteHookEventMessage.self, from: lineData) else {
+                    return nil
+                }
+                return QueuedRemoteMessage(
+                    requestID: message.payload.requestID,
+                    data: lineData + Data("\n".utf8)
+                )
+            }
+        var totalBytes = messages.reduce(0) { $0 + $1.data.count }
+        var startIndex = 0
+        while messages.count - startIndex > maximumOutboxMessageCount
+            || totalBytes > maximumOutboxBytes {
+            totalBytes -= messages[startIndex].data.count
+            startIndex += 1
+        }
+        return Array(messages.dropFirst(startIndex))
     }
 }
 
@@ -1163,10 +1280,32 @@ private enum RemoteAgentAttach {
         while true {
             let count = read(inputFD, &buffer, buffer.count)
             guard count > 0 else { break }
-            _ = buffer.withUnsafeBytes { rawBuffer in
-                write(outputFD, rawBuffer.baseAddress, count)
-            }
+            guard RemoteAgentIO.writeAll(Data(buffer.prefix(count)), to: outputFD) else { break }
         }
+    }
+}
+
+private enum RemoteAgentIO {
+    static func writeAll(_ data: Data, to fileDescriptor: Int32) -> Bool {
+        var offset = 0
+        while offset < data.count {
+            let written = data.withUnsafeBytes { buffer in
+                write(
+                    fileDescriptor,
+                    buffer.baseAddress?.advanced(by: offset),
+                    data.count - offset
+                )
+            }
+            if written > 0 {
+                offset += written
+                continue
+            }
+            if written < 0, errno == EINTR {
+                continue
+            }
+            return false
+        }
+        return true
     }
 }
 
@@ -1175,6 +1314,11 @@ private struct PendingRemoteBridgeRequest {
     let sessionID: String
     let toolUseID: String?
     let clientSocket: Int32
+}
+
+private struct QueuedRemoteMessage {
+    let requestID: UUID
+    let data: Data
 }
 
 private struct RemoteCodexThread: Equatable {
@@ -1189,6 +1333,8 @@ private struct RemoteCodexThread: Equatable {
 }
 
 private enum RemoteCodexStatePoller {
+    private static let maximumRolloutTailBytes = 1 * 1_024 * 1_024
+
     static func readRecentThreads(codexHome: URL, updatedSinceMs: Int64) -> [RemoteCodexThread] {
         guard let stateURL = newestStateDatabase(in: codexHome),
               let database = RemoteSQLiteDatabase.openReadOnly(path: stateURL.path) else {
@@ -1230,6 +1376,51 @@ private enum RemoteCodexStatePoller {
         """
 
         return database.recentCodexThreads(query: query, updatedSinceMs: updatedSinceMs)
+    }
+
+    static func executionStatus(for thread: RemoteCodexThread) -> String? {
+        guard let rolloutPath = thread.rolloutPath,
+              let handle = FileHandle(forReadingAtPath: rolloutPath) else {
+            return nil
+        }
+        defer { try? handle.close() }
+
+        do {
+            let fileSize = try handle.seekToEnd()
+            let startOffset = fileSize > UInt64(maximumRolloutTailBytes)
+                ? fileSize - UInt64(maximumRolloutTailBytes)
+                : 0
+            try handle.seek(toOffset: startOffset)
+            guard let data = try handle.readToEnd(), !data.isEmpty else { return nil }
+
+            var lines = data.split(separator: 0x0A, omittingEmptySubsequences: true)
+            if startOffset > 0, data.first != 0x0A, !lines.isEmpty {
+                lines.removeFirst()
+            }
+
+            for line in lines.reversed() {
+                guard let object = try? JSONSerialization.jsonObject(with: Data(line)) as? [String: Any],
+                      object["type"] as? String == "event_msg",
+                      let payload = object["payload"] as? [String: Any],
+                      let eventType = payload["type"] as? String else {
+                    continue
+                }
+                switch eventType {
+                case "task_started":
+                    return "processing"
+                case "task_complete", "turn_aborted":
+                    return "idle"
+                case "context_compacted":
+                    return "compacting"
+                default:
+                    continue
+                }
+            }
+        } catch {
+            return nil
+        }
+
+        return nil
     }
 
     private static func newestStateDatabase(in codexHome: URL) -> URL? {
@@ -1474,6 +1665,8 @@ private struct RemoteHookEventPayload: Codable {
     let event: String
     let status: String
     let provider: String
+    let permissionMode: String?
+    let approvalsReviewer: String?
     let pid: Int?
     let tty: String?
     let tool: String?
@@ -1504,9 +1697,35 @@ private struct RemoteDecisionEnvelope: Codable {
     let updatedInput: [String: JSONValue]?
 }
 
+private struct RemoteAcknowledgementEnvelope: Codable {
+    let type: String
+    let requestID: UUID
+}
+
+private enum RemoteControlEnvelope: Decodable {
+    case acknowledgement(RemoteAcknowledgementEnvelope)
+    case decision(RemoteDecisionEnvelope)
+
+    private enum CodingKeys: String, CodingKey {
+        case type
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        switch try container.decode(String.self, forKey: .type) {
+        case "ack":
+            self = .acknowledgement(try RemoteAcknowledgementEnvelope(from: decoder))
+        case "decision":
+            self = .decision(try RemoteDecisionEnvelope(from: decoder))
+        default:
+            throw BridgeError.invalidArguments
+        }
+    }
+}
+
 private enum RemoteBridgeMessageBuilder {
-    static func message(from thread: RemoteCodexThread) -> RemoteHookEventMessage {
-        RemoteHookEventMessage(type: "hook_event", payload: payload(from: thread))
+    static func message(from thread: RemoteCodexThread, status: String) -> RemoteHookEventMessage {
+        RemoteHookEventMessage(type: "hook_event", payload: payload(from: thread, status: status))
     }
 
     static func payload(from envelope: BridgeEnvelope) -> RemoteHookEventPayload {
@@ -1525,6 +1744,8 @@ private enum RemoteBridgeMessageBuilder {
             event: envelope.eventType,
             status: mapStatus(eventType: envelope.eventType, status: envelope.status?.kind, notificationType: metadata["notification_type"]),
             provider: envelope.provider.rawValue,
+            permissionMode: metadata["permission_mode"],
+            approvalsReviewer: firstNonEmpty(metadata["approvals_reviewer"], metadata["approval_reviewer"]),
             pid: Int(metadata["pid"] ?? "") ?? Int(getppid()),
             tty: terminalContext.tty,
             tool: normalizedToolName(metadata["tool_name"] ?? envelope.title),
@@ -1559,15 +1780,17 @@ private enum RemoteBridgeMessageBuilder {
         )
     }
 
-    private static func payload(from thread: RemoteCodexThread) -> RemoteHookEventPayload {
+    private static func payload(from thread: RemoteCodexThread, status: String) -> RemoteHookEventPayload {
         let message = firstNonEmpty(thread.preview, thread.title)
         return RemoteHookEventPayload(
             requestID: UUID(),
             sessionID: thread.id,
             cwd: thread.cwd,
             event: "RemoteCodexThreadUpdated",
-            status: "processing",
+            status: status,
             provider: AgentProvider.codex.rawValue,
+            permissionMode: nil,
+            approvalsReviewer: nil,
             pid: nil,
             tty: nil,
             tool: nil,
@@ -1611,6 +1834,8 @@ private enum RemoteBridgeMessageBuilder {
             return .cancel
         case "answer":
             return .answer(BridgeAnswerPayload.extractAnswers(from: updatedInput))
+        case "defer":
+            return nil
         default:
             return nil
         }

@@ -8,6 +8,7 @@ import Glibc
 #endif
 
 public enum HookPayloadMapper {
+    private static let maximumCodexRolloutTailBytes = 4 * 1_024 * 1_024
     private static let questionToolNames: Set<String> = [
         "askuserquestion",
         "askfollowupquestion"
@@ -33,6 +34,18 @@ public enum HookPayloadMapper {
         let terminalContext = makeTerminalContext(environment: effectiveEnvironment, payload: payload)
         let sessionKey = detectSessionKey(payload: payload, environment: effectiveEnvironment, provider: source)
         var metadata = mergedMetadata(arguments: arguments, payload: payload, terminalContext: terminalContext)
+        if source == .codex,
+           eventType == "PermissionRequest",
+           metadata["approvals_reviewer"] == nil,
+           let reviewer = codexApprovalReviewer(
+               transcriptPath: metadata["transcript_path"],
+               turnID: metadata["turn_id"]
+           ) {
+            // The bridge may run on a remote host whose rollout path is not
+            // readable by the macOS app. Resolve the active reviewer here and
+            // forward only that mode with the hook envelope.
+            metadata["approvals_reviewer"] = reviewer
+        }
         if runtimeConfig.routePromptsToTerminal {
             // Marker the app side reads to skip building an in-app prompt for
             // this event. Keeps the envelope flowing for status updates only.
@@ -438,6 +451,11 @@ public enum HookPayloadMapper {
             }
             return mapStatusString(text)
         }
+        if clientKind == "opencode", eventType.caseInsensitiveCompare("Stop") == .orderedSame {
+            // Managed plugins installed before session.idle support emitted a
+            // bare Stop. OpenCode uses it for a completed turn, not a question.
+            return SessionStatus(kind: .idle)
+        }
         if isGeminiHookClient(clientKind) {
             return geminiStatus(eventType: eventType, payload: payload)
         }
@@ -589,8 +607,10 @@ public enum HookPayloadMapper {
             return SessionStatus(kind: .thinking, detail: string)
         case let text where text.contains("compact"):
             return SessionStatus(kind: .compacting, detail: string)
-        case let text where text.contains("done") || text.contains("idle"):
+        case let text where text.contains("done"):
             return SessionStatus(kind: .completed, detail: string)
+        case let text where text.contains("idle"):
+            return SessionStatus(kind: .idle, detail: string)
         case let text where text.contains("error") || text.contains("fail"):
             return SessionStatus(kind: .error, detail: string)
         default:
@@ -1014,6 +1034,53 @@ public enum HookPayloadMapper {
             metadata["cwd"] = resolvedCWD
         }
         return metadata
+    }
+
+    private static func codexApprovalReviewer(
+        transcriptPath: String?,
+        turnID: String?
+    ) -> String? {
+        guard let transcriptPath = nonEmpty(transcriptPath),
+              let handle = FileHandle(forReadingAtPath: transcriptPath) else {
+            return nil
+        }
+        defer { try? handle.close() }
+
+        do {
+            let fileSize = try handle.seekToEnd()
+            let startOffset = fileSize > UInt64(maximumCodexRolloutTailBytes)
+                ? fileSize - UInt64(maximumCodexRolloutTailBytes)
+                : 0
+            try handle.seek(toOffset: startOffset)
+            guard let data = try handle.readToEnd(), !data.isEmpty else {
+                return nil
+            }
+
+            var lines = data.split(separator: 0x0A, omittingEmptySubsequences: true)
+            if startOffset > 0, data.first != 0x0A, !lines.isEmpty {
+                lines.removeFirst()
+            }
+
+            for line in lines.reversed() {
+                guard let json = try? JSONSerialization.jsonObject(with: Data(line)) as? [String: Any],
+                      json["type"] as? String == "turn_context",
+                      let context = json["payload"] as? [String: Any] else {
+                    continue
+                }
+
+                if let turnID = nonEmpty(turnID), context["turn_id"] as? String != turnID {
+                    continue
+                }
+
+                return nonEmpty(context["approvals_reviewer"] as? String)?
+                    .lowercased()
+                    .replacingOccurrences(of: "-", with: "_")
+            }
+        } catch {
+            return nil
+        }
+
+        return nil
     }
 
     private static func detectedSourceProcessName() -> String? {

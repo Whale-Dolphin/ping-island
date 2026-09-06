@@ -2,8 +2,8 @@
 //  JSONLInterruptWatcher.swift
 //  PingIsland
 //
-//  Watches JSONL files for interrupt patterns in real-time
-//  Uses file system events to detect interrupts faster than hook polling
+//  Watches JSONL files for transcript changes and interrupt patterns in real-time
+//  Uses file system events to refresh session state without waiting for polling
 //
 
 import Foundation
@@ -14,11 +14,11 @@ private let logger = Logger(subsystem: "com.wudanwu.pingisland", category: "Inte
 
 protocol JSONLInterruptWatcherDelegate: AnyObject {
     func didDetectInterrupt(sessionId: String)
-    func didObserveFileChange(sessionId: String)
+    func didObserveFileChange(sessionId: String, requiresImmediateSync: Bool)
 }
 
-/// Watches a session's JSONL file for interrupt patterns in real-time
-/// Uses DispatchSource for immediate detection when new lines are written
+/// Watches a session's JSONL file for transcript changes and interrupt patterns.
+/// Uses DispatchSource for immediate detection when new lines are written.
 class JSONLInterruptWatcher {
     private static let initialRetryDelayMs = 250
     private static let maxRetryDelayMs = 5_000
@@ -27,9 +27,11 @@ class JSONLInterruptWatcher {
     private var source: DispatchSourceFileSystemObject?
     private var retryWorkItem: DispatchWorkItem?
     private var lastOffset: UInt64 = 0
+    private var pendingLineFragment = ""
     private var retryAttempt = 0
     private var loggedMissingFile = false
     private var waitingForFile = false
+    private var hasAttached = false
     private let sessionId: String
     private let filePath: String
     private let queue = DispatchQueue(label: "com.wudanwu.pingisland.interruptwatcher", qos: .userInteractive)
@@ -43,6 +45,16 @@ class JSONLInterruptWatcher {
         "interrupted by user",
         "user doesn't want to proceed",
         "[Request interrupted by user"
+    ]
+    private static let immediateLifecycleEvents: Set<String> = [
+        "task_started",
+        "task_complete",
+        "turn_aborted",
+        "context_compacted"
+    ]
+    private static let immediateInteractionItems: Set<String> = [
+        "function_call",
+        "function_call_output"
     ]
 
     init(sessionId: String, cwd: String, explicitFilePath: String? = nil) {
@@ -127,8 +139,9 @@ class JSONLInterruptWatcher {
         }
 
         fileHandle = handle
-        let needsInitialSync = waitingForFile
+        let needsInitialSync = !hasAttached
         waitingForFile = false
+        pendingLineFragment = ""
         retryAttempt = 0
         if loggedMissingFile {
             logger.debug("Attached transcript watcher after file became available: \(self.sessionId.prefix(8), privacy: .public)...")
@@ -162,6 +175,7 @@ class JSONLInterruptWatcher {
         }
 
         source = newSource
+        hasAttached = true
         newSource.resume()
 
         logger.debug("Started watching: \(self.sessionId.prefix(8), privacy: .public)...")
@@ -169,7 +183,10 @@ class JSONLInterruptWatcher {
         if needsInitialSync {
             DispatchQueue.main.async { [weak self] in
                 guard let self = self else { return }
-                self.delegate?.didObserveFileChange(sessionId: self.sessionId)
+                self.delegate?.didObserveFileChange(
+                    sessionId: self.sessionId,
+                    requiresImmediateSync: true
+                )
             }
         }
     }
@@ -199,12 +216,16 @@ class JSONLInterruptWatcher {
 
         lastOffset = currentSize
 
+        let lines = completedLines(from: newContent)
+        let requiresImmediateSync = Self.requiresImmediateSessionSync(in: lines)
         DispatchQueue.main.async { [weak self] in
             guard let self = self else { return }
-            self.delegate?.didObserveFileChange(sessionId: self.sessionId)
+            self.delegate?.didObserveFileChange(
+                sessionId: self.sessionId,
+                requiresImmediateSync: requiresImmediateSync
+            )
         }
 
-        let lines = newContent.components(separatedBy: "\n")
         for line in lines where !line.isEmpty {
             if isInterruptLine(line) {
                 logger.info("Detected interrupt in session: \(self.sessionId.prefix(8), privacy: .public)")
@@ -215,6 +236,51 @@ class JSONLInterruptWatcher {
                 return
             }
         }
+    }
+
+    private func completedLines(from newContent: String) -> [String] {
+        let combinedContent = pendingLineFragment + newContent
+        var lines = combinedContent.components(separatedBy: "\n")
+        if combinedContent.hasSuffix("\n") {
+            pendingLineFragment = ""
+        } else {
+            pendingLineFragment = lines.removeLast()
+        }
+        return lines
+    }
+
+    static func requiresImmediateSessionSync(in content: String) -> Bool {
+        requiresImmediateSessionSync(in: content.components(separatedBy: "\n"))
+    }
+
+    private static func requiresImmediateSessionSync(in lines: [String]) -> Bool {
+        for line in lines where !line.isEmpty {
+            let containsLifecycleEvent = immediateLifecycleEvents.contains { event in
+                line.contains("\"\(event)\"")
+            }
+            let containsInteractionItem = immediateInteractionItems.contains { item in
+                line.contains("\"\(item)\"")
+            }
+            guard containsLifecycleEvent || containsInteractionItem else {
+                continue
+            }
+            guard let data = line.data(using: .utf8),
+                  let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+                  let type = object["type"] as? String,
+                  let payload = object["payload"] as? [String: Any],
+                  let payloadType = payload["type"] as? String else {
+                continue
+            }
+
+            if type == "event_msg", immediateLifecycleEvents.contains(payloadType) {
+                return true
+            }
+            if type == "response_item", immediateInteractionItems.contains(payloadType) {
+                return true
+            }
+        }
+
+        return false
     }
 
     private func isInterruptLine(_ line: String) -> Bool {

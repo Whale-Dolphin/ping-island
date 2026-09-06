@@ -695,6 +695,16 @@ final class NotchViewModelTests: XCTestCase {
         let attention = SessionState(
             sessionId: "attention",
             cwd: "/tmp/attention",
+            intervention: SessionIntervention(
+                id: "question-1",
+                kind: .question,
+                title: "Need your answer",
+                message: "Need your answer",
+                options: [],
+                questions: [],
+                supportsSessionScope: false,
+                metadata: [:]
+            ),
             phase: .waitingForInput,
             lastActivity: now.addingTimeInterval(-60)
         )
@@ -754,6 +764,16 @@ final class NotchViewModelTests: XCTestCase {
         let attention = SessionState(
             sessionId: "attention",
             cwd: "/tmp/attention",
+            intervention: SessionIntervention(
+                id: "question-1",
+                kind: .question,
+                title: "Need your answer",
+                message: "Need your answer",
+                options: [],
+                questions: [],
+                supportsSessionScope: false,
+                metadata: [:]
+            ),
             phase: .waitingForInput,
             lastActivity: now.addingTimeInterval(-5)
         )

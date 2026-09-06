@@ -3,7 +3,7 @@ import XCTest
 @testable import Ping_Island
 
 final class SessionCompletionStateEvaluatorTests: XCTestCase {
-    func testCompletedAssistantReplyRejectsToolOnlyTail() {
+    func testCompletedLifecycleDoesNotRequireAssistantText() {
         let session = SessionState(
             sessionId: "tool-tail",
             cwd: "/tmp/project",
@@ -36,7 +36,7 @@ final class SessionCompletionStateEvaluatorTests: XCTestCase {
         )
 
         XCTAssertFalse(SessionCompletionStateEvaluator.hasCompletedAssistantReply(for: session))
-        XCTAssertFalse(SessionCompletionStateEvaluator.isCompletedReadySession(session))
+        XCTAssertTrue(SessionCompletionStateEvaluator.isCompletedReadySession(session))
     }
 
     func testCompletedReadySessionRequiresWaitingForInputAssistantReply() {
@@ -97,6 +97,84 @@ final class SessionCompletionStateEvaluatorTests: XCTestCase {
 
         XCTAssertTrue(SessionCompletionStateEvaluator.hasCompletedAssistantReply(for: session))
         XCTAssertTrue(SessionCompletionStateEvaluator.isCompletedReadySession(session))
+    }
+
+    func testOpenCodeIdleAssistantReplyIsCompletedReadySession() {
+        let session = SessionState(
+            sessionId: "opencode-idle-final",
+            cwd: "/tmp/project",
+            provider: .claude,
+            clientInfo: SessionClientInfo(
+                kind: .custom,
+                profileID: "opencode",
+                name: "OpenCode",
+                origin: "cli",
+                originator: "OpenCode",
+                threadSource: "opencode-plugin"
+            ),
+            phase: .idle,
+            chatItems: [
+                ChatHistoryItem(id: "1", type: .user("修一下状态"), timestamp: Date(timeIntervalSince1970: 1)),
+                ChatHistoryItem(id: "2", type: .assistant("已经修好了。"), timestamp: Date(timeIntervalSince1970: 2))
+            ]
+        )
+
+        XCTAssertTrue(SessionCompletionStateEvaluator.hasCompletedAssistantReply(for: session))
+        XCTAssertTrue(SessionCompletionStateEvaluator.isCompletedReadySession(session))
+    }
+
+    func testOpenCodeIdleMetadataRefreshDoesNotQueueDuplicateCompletion() {
+        let now = Date()
+        let session = SessionState(
+            sessionId: "opencode-idle-refresh",
+            cwd: "/tmp/project",
+            provider: .claude,
+            clientInfo: SessionClientInfo(
+                kind: .custom,
+                profileID: "opencode",
+                name: "OpenCode",
+                origin: "cli",
+                originator: "OpenCode",
+                threadSource: "opencode-plugin"
+            ),
+            phase: .idle,
+            lastActivity: now
+        )
+
+        XCTAssertFalse(
+            SessionCompletionNotificationPolicy.shouldQueueCompletedNotification(
+                for: session,
+                previousPhase: .idle,
+                isEnabled: true,
+                now: now
+            )
+        )
+        XCTAssertTrue(
+            SessionCompletionNotificationPolicy.shouldQueueCompletedNotification(
+                for: session,
+                previousPhase: .processing,
+                isEnabled: true,
+                now: now
+            )
+        )
+    }
+
+    func testCompletionDeliveryKeySeparatesTurnsAndKinds() {
+        let first = SessionState(
+            sessionId: "multi-turn",
+            cwd: "/tmp/project",
+            phase: .waitingForInput,
+            lastActivity: Date(timeIntervalSince1970: 100)
+        )
+        var second = first
+        second.lastActivity = Date(timeIntervalSince1970: 101)
+
+        let firstCompletion = SessionCompletionNotification(session: first, kind: .completed)
+        let secondCompletion = SessionCompletionNotification(session: second, kind: .completed)
+        let ended = SessionCompletionNotification(session: first, kind: .ended)
+
+        XCTAssertNotEqual(firstCompletion.deliveryKey, secondCompletion.deliveryKey)
+        XCTAssertNotEqual(firstCompletion.deliveryKey, ended.deliveryKey)
     }
 
     func testNonCodexIdleAssistantReplyIsNotCompletedReadySession() {
@@ -217,6 +295,44 @@ final class SessionCompletionStateEvaluatorTests: XCTestCase {
             SessionCompletionNotificationPolicy.shouldQueueCompletedNotification(
                 for: session,
                 previousPhase: nil,
+                isEnabled: true,
+                now: now
+            )
+        )
+    }
+
+    func testCompletionNotificationPolicyRejectsRecentUntrackedCompletionWithoutAssistantReply() {
+        let now = Date()
+        let session = SessionState(
+            sessionId: "recent-empty-completed",
+            cwd: "/tmp/project",
+            phase: .waitingForInput,
+            createdAt: now.addingTimeInterval(-5)
+        )
+
+        XCTAssertFalse(
+            SessionCompletionNotificationPolicy.shouldQueueCompletedNotification(
+                for: session,
+                previousPhase: nil,
+                isEnabled: true,
+                now: now
+            )
+        )
+    }
+
+    func testCompletionNotificationPolicyAllowsTrackedCompletionWithoutAssistantReply() {
+        let now = Date()
+        let session = SessionState(
+            sessionId: "tracked-empty-completed",
+            cwd: "/tmp/project",
+            phase: .waitingForInput,
+            createdAt: now.addingTimeInterval(-30)
+        )
+
+        XCTAssertTrue(
+            SessionCompletionNotificationPolicy.shouldQueueCompletedNotification(
+                for: session,
+                previousPhase: .processing,
                 isEnabled: true,
                 now: now
             )
@@ -396,72 +512,6 @@ final class SessionCompletionStateEvaluatorTests: XCTestCase {
                 previousPhase: .compacting,
                 isEnabled: true,
                 now: now
-            )
-        )
-    }
-
-    func testCompletionNotificationPolicyDetectsActiveSessionBlocker() {
-        let codex = SessionState(
-            sessionId: "codex-completed",
-            cwd: "/tmp/project",
-            provider: .codex,
-            clientInfo: SessionClientInfo.codexApp(threadId: "codex-completed"),
-            phase: .idle,
-            chatItems: [
-                ChatHistoryItem(id: "assistant", type: .assistant("Done"), timestamp: Date())
-            ]
-        )
-        let activeClaude = SessionState(
-            sessionId: "claude-active",
-            cwd: "/tmp/project",
-            provider: .claude,
-            phase: .processing
-        )
-        let waitingClaude = SessionState(
-            sessionId: "claude-waiting",
-            cwd: "/tmp/project",
-            provider: .claude,
-            phase: .waitingForInput
-        )
-        let completedWaitingClaude = SessionState(
-            sessionId: "claude-completed",
-            cwd: "/tmp/project",
-            provider: .claude,
-            phase: .waitingForInput,
-            chatItems: [
-                ChatHistoryItem(id: "assistant", type: .assistant("Done"), timestamp: Date())
-            ]
-        )
-        let activeCodex = SessionState(
-            sessionId: "codex-active",
-            cwd: "/tmp/project",
-            provider: .codex,
-            clientInfo: SessionClientInfo.codexApp(threadId: "codex-active"),
-            phase: .processing
-        )
-
-        XCTAssertTrue(
-            SessionCompletionNotificationPolicy.hasBlockingActiveSession(
-                for: codex,
-                in: [codex, activeClaude]
-            )
-        )
-        XCTAssertTrue(
-            SessionCompletionNotificationPolicy.hasBlockingActiveSession(
-                for: codex,
-                in: [codex, waitingClaude]
-            )
-        )
-        XCTAssertFalse(
-            SessionCompletionNotificationPolicy.hasBlockingActiveSession(
-                for: codex,
-                in: [codex, completedWaitingClaude]
-            )
-        )
-        XCTAssertTrue(
-            SessionCompletionNotificationPolicy.hasBlockingActiveSession(
-                for: codex,
-                in: [codex, activeCodex]
             )
         )
     }

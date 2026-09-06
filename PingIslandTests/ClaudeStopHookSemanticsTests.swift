@@ -109,18 +109,50 @@ final class ClaudeStopHookSemanticsTests: XCTestCase {
         await store.process(.sessionArchived(sessionId: sessionId))
     }
 
+    func testClaudeTranscriptPathKeepsProjectNameWhenHookCwdMovesIntoSubdirectory() async {
+        let sessionId = "claude-project-root-\(UUID().uuidString)"
+        let store = SessionStore.shared
+        let projectRoot = "/srv/agent/workspace/research"
+        let transcriptPath = "/srv/agent/.claude/projects/-srv-agent-workspace-research/\(sessionId).jsonl"
+
+        await store.process(.hookReceived(makeClaudeEvent(
+            sessionId: sessionId,
+            event: "UserPromptSubmit",
+            status: "processing",
+            cwd: projectRoot,
+            sessionFilePath: transcriptPath
+        )))
+        await store.process(.hookReceived(makeClaudeEvent(
+            sessionId: sessionId,
+            event: "PreToolUse",
+            status: "running_tool",
+            cwd: "\(projectRoot)/results",
+            sessionFilePath: transcriptPath,
+            tool: "Write",
+            toolUseId: "write-1"
+        )))
+
+        let session = await store.session(for: sessionId)
+        XCTAssertEqual(session?.cwd, "\(projectRoot)/results")
+        XCTAssertEqual(session?.projectName, "research")
+
+        await store.process(.sessionArchived(sessionId: sessionId))
+    }
+
     // MARK: - Helpers
 
     private func makeClaudeEvent(
         sessionId: String,
         event: String,
         status: String,
+        cwd: String = "/tmp/project",
+        sessionFilePath: String? = nil,
         tool: String? = nil,
         toolUseId: String? = nil
     ) -> HookEvent {
         HookEvent(
             sessionId: sessionId,
-            cwd: "/tmp/project",
+            cwd: cwd,
             event: event,
             status: status,
             provider: .claude,
@@ -128,7 +160,8 @@ final class ClaudeStopHookSemanticsTests: XCTestCase {
                 kind: .claudeCode,
                 profileID: "claude_code",
                 name: "Claude Code",
-                bundleIdentifier: "com.anthropic.claudecode"
+                bundleIdentifier: "com.anthropic.claudecode",
+                sessionFilePath: sessionFilePath
             ),
             pid: nil,
             tty: nil,

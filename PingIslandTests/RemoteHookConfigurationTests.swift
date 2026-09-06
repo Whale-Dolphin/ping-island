@@ -12,6 +12,7 @@ final class RemoteHookConfigurationTests: XCTestCase {
         )
 
         XCTAssertTrue(command.contains("mkdir -p "))
+        XCTAssertTrue(command.contains("chmod 700 '/root/.ping-island/run' '/root/.ping-island/logs'"))
         XCTAssertTrue(command.contains("pkill -f "))
         XCTAssertTrue(command.contains("PingIslandBridge"))
         XCTAssertTrue(command.contains("rm -f "))
@@ -41,6 +42,43 @@ final class RemoteHookConfigurationTests: XCTestCase {
         XCTAssertTrue(command.contains("chmod 755 '/root/.ping-island/bin/PingIslandBridge' '/root/.ping-island/bin/ping-island-bridge'"))
     }
 
+    func testRemoteBridgeChecksumCommandSupportsLinuxAndMacUtilities() {
+        let command = RemoteConnectorManager.remoteBridgeChecksumCommand(
+            path: "/home/dev/Ping Island/PingIslandBridge"
+        )
+
+        XCTAssertTrue(command.contains("command -v sha256sum"))
+        XCTAssertTrue(command.contains("sha256sum '/home/dev/Ping Island/PingIslandBridge'"))
+        XCTAssertTrue(command.contains("shasum -a 256 '/home/dev/Ping Island/PingIslandBridge'"))
+    }
+
+    func testRemoteBridgeInstallationIsCurrentOnlyWhenFilesAndChecksumMatch() {
+        XCTAssertTrue(
+            RemoteConnectorManager.isRemoteBridgeInstallationCurrent(
+                bridgeExists: true,
+                launcherExists: true,
+                localChecksum: "expected",
+                remoteChecksum: "expected"
+            )
+        )
+        XCTAssertFalse(
+            RemoteConnectorManager.isRemoteBridgeInstallationCurrent(
+                bridgeExists: true,
+                launcherExists: true,
+                localChecksum: "expected",
+                remoteChecksum: "stale"
+            )
+        )
+        XCTAssertFalse(
+            RemoteConnectorManager.isRemoteBridgeInstallationCurrent(
+                bridgeExists: true,
+                launcherExists: false,
+                localChecksum: "expected",
+                remoteChecksum: "expected"
+            )
+        )
+    }
+
     func testRemoteBridgeLauncherOnlyUsesCompatLoaderForDynamicGlibcBridge() {
         let script = RemoteConnectorManager.remoteBridgeLauncherScript()
 
@@ -56,6 +94,7 @@ final class RemoteHookConfigurationTests: XCTestCase {
         )
 
         XCTAssertTrue(command.contains("mkdir -p '/root/.ping-island/run' '/root/.ping-island/logs'"))
+        XCTAssertTrue(command.contains("chmod 700 '/root/.ping-island/run' '/root/.ping-island/logs'"))
         XCTAssertTrue(command.contains("if [ -S '/root/.ping-island/run/agent-control.sock' ] && pgrep -f '/root/.ping-island/bin/[P]ingIslandBridge --mode remote-agent-service' >/dev/null 2>&1; then"))
         XCTAssertTrue(command.contains("Ping Island remote bridge is not installed at /root/.ping-island/bin"))
         XCTAssertTrue(command.contains("pkill -f '/root/.ping-island/bin/[P]ingIslandBridge --mode remote-agent-service' >/dev/null 2>&1 || true"))
@@ -118,6 +157,13 @@ final class RemoteHookConfigurationTests: XCTestCase {
         XCTAssertEqual(
             RemoteConnectorManager.remoteLinuxBridgeLegacyArchiveAssetName(normalizedArchitecture: "aarch64"),
             "PingIslandBridge-linux-aarch64.zip"
+        )
+        XCTAssertEqual(
+            RemoteConnectorManager.remoteLinuxBridgeOverrideURL(
+                normalizedArchitecture: "x86_64",
+                homeDirectory: URL(fileURLWithPath: "/Users/testuser", isDirectory: true)
+            ).path,
+            "/Users/testuser/.ping-island/custom-bridges/PingIslandBridge-linux-musl-x86_64"
         )
     }
 
@@ -312,6 +358,14 @@ final class RemoteHookConfigurationTests: XCTestCase {
         )
     }
 
+    func testRuntimeReconnectDelayUsesCappedExponentialBackoff() {
+        XCTAssertEqual(RemoteConnectorManager.runtimeReconnectDelaySeconds(forAttempt: 1), 1)
+        XCTAssertEqual(RemoteConnectorManager.runtimeReconnectDelaySeconds(forAttempt: 2), 2)
+        XCTAssertEqual(RemoteConnectorManager.runtimeReconnectDelaySeconds(forAttempt: 5), 16)
+        XCTAssertEqual(RemoteConnectorManager.runtimeReconnectDelaySeconds(forAttempt: 6), 30)
+        XCTAssertEqual(RemoteConnectorManager.runtimeReconnectDelaySeconds(forAttempt: 20), 30)
+    }
+
     func testShouldBootstrapRemoteAgentWhenForced() {
         let endpoint = RemoteEndpoint(
             displayName: "Known Host",
@@ -384,6 +438,52 @@ final class RemoteHookConfigurationTests: XCTestCase {
                 endpoint: endpoint
             ),
             "devbox"
+        )
+    }
+
+    func testRemoteCodexAutomaticApprovalReviewIsDeferredToCodex() {
+        XCTAssertTrue(
+            RemoteConnectorManager.shouldDeferRemoteCodexApproval(
+                provider: "codex",
+                eventType: "PermissionRequest",
+                permissionMode: "default",
+                approvalsReviewer: "auto_review"
+            )
+        )
+        XCTAssertTrue(
+            RemoteConnectorManager.shouldDeferRemoteCodexApproval(
+                provider: "codex",
+                eventType: "PermissionRequest",
+                permissionMode: "default",
+                approvalsReviewer: "auto-review"
+            )
+        )
+    }
+
+    func testRemoteCodexManualApprovalIsNotDeferred() {
+        XCTAssertFalse(
+            RemoteConnectorManager.shouldDeferRemoteCodexApproval(
+                provider: "codex",
+                eventType: "PermissionRequest",
+                permissionMode: "default",
+                approvalsReviewer: "guardian_subagent"
+            )
+        )
+        XCTAssertFalse(
+            RemoteConnectorManager.shouldDeferRemoteCodexApproval(
+                provider: "codex",
+                eventType: "PermissionRequest",
+                permissionMode: "bypassPermissions",
+                approvalsReviewer: "auto_review"
+            )
+        )
+        XCTAssertFalse(
+            RemoteConnectorManager.shouldDeferRemoteCodexApproval(
+                provider: "claude",
+                eventType: "PermissionRequest",
+                permissionMode: "default",
+                approvalsReviewer: "auto_review"
+            )
         )
     }
 

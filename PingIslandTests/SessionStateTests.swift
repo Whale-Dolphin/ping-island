@@ -3,14 +3,36 @@ import XCTest
 @testable import Ping_Island
 
 final class SessionStateTests: XCTestCase {
-    func testClosedNotchMascotStatusReturnsWorkingAfterWarningsClearForLiveSession() {
+    func testClosedNotchMascotStatusReturnsIdleForIdleSession() {
         XCTAssertEqual(
             MascotStatus.closedNotchStatus(
                 representativePhase: .idle,
                 hasPendingPermission: false,
                 hasHumanIntervention: false
             ),
+            .idle
+        )
+    }
+
+    func testClosedNotchMascotStatusReturnsWorkingForProcessingSession() {
+        XCTAssertEqual(
+            MascotStatus.closedNotchStatus(
+                representativePhase: .processing,
+                hasPendingPermission: false,
+                hasHumanIntervention: false
+            ),
             .working
+        )
+    }
+
+    func testClosedNotchMascotStatusReturnsIdleForCompletedWaitingSession() {
+        XCTAssertEqual(
+            MascotStatus.closedNotchStatus(
+                representativePhase: .waitingForInput,
+                hasPendingPermission: false,
+                hasHumanIntervention: false
+            ),
+            .idle
         )
     }
 
@@ -372,6 +394,20 @@ final class SessionStateTests: XCTestCase {
         XCTAssertTrue(session.needsPromptNotification)
         XCTAssertFalse(session.needsApprovalResponse)
         XCTAssertFalse(session.needsQuestionResponse)
+    }
+
+    func testDisconnectedEventSuppressedPromptDoesNotRemainNotificationEligible() {
+        let session = SessionState(
+            sessionId: "disconnected-terminal-routed-question",
+            cwd: "/tmp/project",
+            connectionState: .disconnected,
+            suppressInAppPromptControls: true,
+            phase: .waitingForInput
+        )
+
+        XCTAssertFalse(session.needsPromptNotification)
+        XCTAssertFalse(session.isExecutionActive)
+        XCTAssertFalse(session.needsManualAttention)
     }
 
     func testClaudeCodeWaitingForApprovalWithoutSessionScopeDoesNotExposeAutoApproveAction() {
@@ -2592,5 +2628,59 @@ final class SessionStateTests: XCTestCase {
 
         XCTAssertFalse(script.contains("targetTerminalID"))
         XCTAssertTrue(script.contains("set targetPath to \"/tmp/demo\""))
+    }
+
+    func testSessionMonitorDeduplicatesOnlySameLocalClaudeProcess() {
+        let clientInfo = SessionClientInfo(
+            kind: .claudeCode,
+            profileID: "claude-code",
+            name: "Claude Code"
+        )
+        let older = SessionState(
+            sessionId: "older",
+            cwd: "/tmp/project",
+            clientInfo: clientInfo,
+            pid: 4242,
+            phase: .processing,
+            lastActivity: Date(timeIntervalSince1970: 1)
+        )
+        let newer = SessionState(
+            sessionId: "newer",
+            cwd: "/tmp/project",
+            clientInfo: clientInfo,
+            pid: 4242,
+            phase: .processing,
+            lastActivity: Date(timeIntervalSince1970: 2)
+        )
+
+        let sessions = SessionMonitor.deduplicateSameLocalClaudeProcessSessions([older, newer])
+
+        XCTAssertEqual(sessions.map(\.sessionId), ["newer"])
+    }
+
+    func testSessionMonitorKeepsParallelClaudeProcessesInSameWorkspace() {
+        let clientInfo = SessionClientInfo(
+            kind: .claudeCode,
+            profileID: "claude-code",
+            name: "Claude Code"
+        )
+        let first = SessionState(
+            sessionId: "first",
+            cwd: "/tmp/project",
+            clientInfo: clientInfo,
+            pid: 4242,
+            phase: .processing
+        )
+        let second = SessionState(
+            sessionId: "second",
+            cwd: "/tmp/project",
+            clientInfo: clientInfo,
+            pid: 4343,
+            phase: .processing
+        )
+
+        let sessions = SessionMonitor.deduplicateSameLocalClaudeProcessSessions([first, second])
+
+        XCTAssertEqual(Set(sessions.map(\.sessionId)), Set(["first", "second"]))
     }
 }

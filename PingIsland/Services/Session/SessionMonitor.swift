@@ -138,7 +138,9 @@ class SessionMonitor: ObservableObject {
             await runtimeCoordinator.start()
         }
         RemoteConnectorManager.shared.start(
-            onEvent: handleHookEvent,
+            onEvent: { [self] event in
+                await handleIncomingHookEvent(event)
+            },
             onPermissionFailure: { sessionId, toolUseId in
                 Task {
                     await SessionStore.shared.process(
@@ -813,7 +815,7 @@ class SessionMonitor: ObservableObject {
 
     private func refreshVisibleSessions() {
         let visibleSessions = filteredVisibleSessions(from: allSessions)
-        let pendingSessions = visibleSessions.filter { $0.needsAttention }
+        let pendingSessions = visibleSessions.filter(\.needsManualAttention)
         recordNewAttentionRequests(in: pendingSessions)
         if visibleSessions != instances {
             instances = visibleSessions
@@ -840,47 +842,55 @@ class SessionMonitor: ObservableObject {
         let primaryVisibleSessions = sessions.filter {
             !$0.shouldHideFromPrimaryUI && $0.shouldDisplaySubagent(in: visibilityMode)
         }
-        let dedupedSessions = deduplicateSameProjectClaudeSessions(from: primaryVisibleSessions)
-        return dedupedSessions.filter { candidate in
+        let deduplicatedSessions = Self.deduplicateSameLocalClaudeProcessSessions(
+            primaryVisibleSessions
+        )
+        return deduplicatedSessions.filter { candidate in
             guard shouldCheckDuplicateVisibility(for: candidate) else {
                 return true
             }
 
-            return !dedupedSessions.contains { other in
+            return !deduplicatedSessions.contains { other in
                 candidate.shouldHideAsDuplicateCodexPlaceholder(comparedTo: other)
                     || candidate.shouldHideAsDuplicateOpenCodeChildSession(comparedTo: other)
             }
         }
     }
 
-    /// When Claude is resumed or restarted, concurrent hook events can create multiple
-    /// sessions for the same project before endOrphanedSessions has a chance to clean up.
-    /// Keep only the most recently active session per provider + cwd pair.
-    private func deduplicateSameProjectClaudeSessions(
-        from sessions: [SessionState]
+    /// A single local Claude Code process can briefly report two session IDs while
+    /// resuming. Collapse only that proven process identity; cwd alone is not unique
+    /// because users can run multiple legitimate sessions in the same project.
+    nonisolated static func deduplicateSameLocalClaudeProcessSessions(
+        _ sessions: [SessionState]
     ) -> [SessionState] {
-        var bestByKey: [String: SessionState] = [:]
-        var order: [String] = []
+        var newestSessionIDByProcess: [Int: String] = [:]
+        var newestActivityByProcess: [Int: Date] = [:]
 
         for session in sessions {
-            guard session.provider == .claude else { continue }
-            let cwd = session.cwd
-            guard !cwd.isEmpty else { continue }
-            let key = "\(session.provider.rawValue):\(cwd)"
-            if let existing = bestByKey[key] {
-                if session.lastActivity > existing.lastActivity {
-                    bestByKey[key] = session
-                }
-            } else {
-                bestByKey[key] = session
-                order.append(key)
+            guard session.provider == .claude,
+                  session.ingress.usesLocalProcessNamespace,
+                  session.clientInfo.isPlainClaudeCodeRouting,
+                  let pid = session.pid,
+                  pid > 0 else {
+                continue
             }
+            if let newestActivity = newestActivityByProcess[pid],
+               newestActivity >= session.lastActivity {
+                continue
+            }
+            newestActivityByProcess[pid] = session.lastActivity
+            newestSessionIDByProcess[pid] = session.sessionId
         }
 
-        var keep = Set(bestByKey.values.map(\.sessionId))
         return sessions.filter { session in
-            guard session.provider == .claude, !session.cwd.isEmpty else { return true }
-            return keep.contains(session.sessionId)
+            guard session.provider == .claude,
+                  session.ingress.usesLocalProcessNamespace,
+                  session.clientInfo.isPlainClaudeCodeRouting,
+                  let pid = session.pid,
+                  pid > 0 else {
+                return true
+            }
+            return newestSessionIDByProcess[pid] == session.sessionId
         }
     }
 
@@ -1290,9 +1300,15 @@ extension SessionMonitor: JSONLInterruptWatcherDelegate {
         }
     }
 
-    nonisolated func didObserveFileChange(sessionId: String) {
+    nonisolated func didObserveFileChange(
+        sessionId: String,
+        requiresImmediateSync: Bool
+    ) {
         Task {
-            await SessionStore.shared.requestFileSync(for: sessionId)
+            await SessionStore.shared.requestFileSync(
+                for: sessionId,
+                forceCodexRolloutParse: requiresImmediateSync
+            )
         }
     }
 }

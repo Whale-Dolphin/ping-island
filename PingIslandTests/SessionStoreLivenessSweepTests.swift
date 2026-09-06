@@ -10,18 +10,7 @@ import XCTest
 final class SessionStoreLivenessSweepTests: XCTestCase {
 
     func testSweepRemovesSessionWithDeadPid() async throws {
-        // Spawn /usr/bin/true and wait for it to exit so we have a real pid
-        // that is guaranteed dead at the moment we register the session.
-        let process = Process()
-        process.executableURL = URL(fileURLWithPath: "/usr/bin/true")
-        try process.run()
-        process.waitUntilExit()
-        let deadPid = Int(process.processIdentifier)
-        XCTAssertGreaterThan(deadPid, 0)
-        XCTAssertTrue(
-            Darwin.kill(pid_t(deadPid), 0) != 0 && errno == ESRCH,
-            "Test setup precondition: spawned pid must be dead before the sweep runs"
-        )
+        let deadPid = try makeDeadPID()
 
         let sessionId = "liveness-dead-\(UUID().uuidString)"
         let store = SessionStore.shared
@@ -38,6 +27,93 @@ final class SessionStoreLivenessSweepTests: XCTestCase {
 
         let afterSweep = await store.session(for: sessionId)
         XCTAssertNil(afterSweep, "Session with dead pid must be removed by the sweep")
+    }
+
+    func testSweepLeavesRemoteSessionWithForeignDeadPidAlone() async throws {
+        let deadPid = try makeDeadPID()
+        let sessionId = "liveness-remote-dead-\(UUID().uuidString)"
+        let store = SessionStore.shared
+
+        await store.process(.hookReceived(makeClaudeEvent(
+            sessionId: sessionId,
+            pid: deadPid,
+            ingress: .remoteBridge
+        )))
+
+        await store.sweepDeadOrEndedSessions()
+
+        let afterSweep = await store.session(for: sessionId)
+        XCTAssertNotNil(
+            afterSweep,
+            "A remote pid belongs to the remote host and must not be checked in the Mac process namespace"
+        )
+
+        await store.process(.sessionArchived(sessionId: sessionId))
+    }
+
+    func testNewRemoteSessionDoesNotArchiveExistingRemoteSessionInSameWorkspace() async throws {
+        let deadPid = try makeDeadPID()
+        let firstSessionId = "liveness-remote-first-\(UUID().uuidString)"
+        let secondSessionId = "liveness-remote-second-\(UUID().uuidString)"
+        let store = SessionStore.shared
+
+        await store.process(.hookReceived(makeClaudeEvent(
+            sessionId: firstSessionId,
+            pid: deadPid,
+            ingress: .remoteBridge
+        )))
+        await store.process(.hookReceived(makeClaudeEvent(
+            sessionId: firstSessionId,
+            pid: deadPid,
+            event: "Stop",
+            status: "idle",
+            ingress: .remoteBridge
+        )))
+
+        await store.process(.hookReceived(makeClaudeEvent(
+            sessionId: secondSessionId,
+            pid: deadPid,
+            event: "SessionStart",
+            status: "waiting_for_input",
+            ingress: .remoteBridge
+        )))
+
+        let firstSession = await store.session(for: firstSessionId)
+        let secondSession = await store.session(for: secondSessionId)
+        XCTAssertNotNil(
+            firstSession,
+            "A second remote session must not archive another remote session using a Mac-side pid check"
+        )
+        XCTAssertNotNil(secondSession)
+
+        await store.process(.sessionArchived(sessionId: firstSessionId))
+        await store.process(.sessionArchived(sessionId: secondSessionId))
+    }
+
+    func testRemoteDisconnectRemovesSessionFromActiveAndAttentionState() async {
+        let sessionId = "remote-disconnect-\(UUID().uuidString)"
+        let endpointID = UUID()
+        let store = SessionStore.shared
+        await store.process(.hookReceived(makeClaudeEvent(
+            sessionId: sessionId,
+            pid: nil,
+            ingress: .remoteBridge,
+            remoteHost: "worker-01",
+            remoteEndpointID: endpointID
+        )))
+
+        await store.markRemoteSessionsDisconnected(
+            endpointID: endpointID,
+            legacyRemoteHost: "different-alias"
+        )
+
+        let disconnected = await store.session(for: sessionId)
+        XCTAssertEqual(disconnected?.connectionState, .disconnected)
+        XCTAssertFalse(disconnected?.isExecutionActive ?? true)
+        XCTAssertFalse(disconnected?.needsManualAttention ?? true)
+        XCTAssertEqual(disconnected.map(MascotStatus.init(session:)), .idle)
+
+        await store.process(.sessionArchived(sessionId: sessionId))
     }
 
     func testSweepRemovesEndedSession() async {
@@ -113,7 +189,10 @@ final class SessionStoreLivenessSweepTests: XCTestCase {
         sessionId: String,
         pid: Int?,
         event: String = "UserPromptSubmit",
-        status: String = "processing"
+        status: String = "processing",
+        ingress: SessionIngress = .hookBridge,
+        remoteHost: String? = nil,
+        remoteEndpointID: UUID? = nil
     ) -> HookEvent {
         HookEvent(
             sessionId: sessionId,
@@ -125,7 +204,9 @@ final class SessionStoreLivenessSweepTests: XCTestCase {
                 kind: .claudeCode,
                 profileID: "claude_code",
                 name: "Claude Code",
-                bundleIdentifier: "com.anthropic.claudecode"
+                bundleIdentifier: "com.anthropic.claudecode",
+                remoteHost: remoteHost,
+                remoteEndpointID: remoteEndpointID
             ),
             pid: pid,
             tty: nil,
@@ -133,7 +214,23 @@ final class SessionStoreLivenessSweepTests: XCTestCase {
             toolInput: nil,
             toolUseId: nil,
             notificationType: nil,
-            message: nil
+            message: nil,
+            ingress: ingress
         )
+    }
+
+    private func makeDeadPID() throws -> Int {
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: "/usr/bin/true")
+        try process.run()
+        process.waitUntilExit()
+
+        let deadPid = Int(process.processIdentifier)
+        XCTAssertGreaterThan(deadPid, 0)
+        XCTAssertTrue(
+            Darwin.kill(pid_t(deadPid), 0) != 0 && errno == ESRCH,
+            "Test setup precondition: spawned pid must be dead before the sweep runs"
+        )
+        return deadPid
     }
 }

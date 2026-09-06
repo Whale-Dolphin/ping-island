@@ -50,6 +50,7 @@ actor CodexAppServerMonitor {
     private var pendingResponses: [String: CheckedContinuation<[String: Any], Error>] = [:]
     private var pendingRequestsByThread: [String: PendingRequest] = [:]
     private var threadApprovalModes: [String: String] = [:]  // threadId → approvalMode
+    private var threadApprovalReviewers: [String: String] = [:]
     private var rolloutRecoveryVersions: [String: String] = [:]
     private var recoveredNotLoadedThreadVersions: [String: String] = [:]
     private var resolvedClientBundleIdentifier: String?
@@ -116,6 +117,7 @@ actor CodexAppServerMonitor {
         process = nil
         pendingRequestsByThread.removeAll()
         threadApprovalModes.removeAll()
+        threadApprovalReviewers.removeAll()
         rolloutRecoveryVersions.removeAll()
         recoveredNotLoadedThreadVersions.removeAll()
         lastThreadDiagnostics.removeAll()
@@ -576,7 +578,21 @@ actor CodexAppServerMonitor {
             )
 
         case "item/autoApprovalReview/started":
-            guard let threadId = params["threadId"] as? String,
+            guard let threadId = params["threadId"] as? String else {
+                return
+            }
+
+            // `auto_review` is work performed by Codex, not a question for the user.
+            // Keep the session running while the reviewer decides; a real escalation
+            // arrives separately as an item/*/requestApproval server request.
+            if isAutomaticApprovalReviewThread(threadId) {
+                logger.info(
+                    "Codex automatic approval review started without user prompt thread=\(threadId, privacy: .public)"
+                )
+                return
+            }
+
+            guard
                   let session = await SessionStore.shared.session(for: threadId),
                   session.clientInfo.kind == .codexCLI,
                   let intervention = Self.guardianReviewIntervention(from: params) else {
@@ -594,8 +610,31 @@ actor CodexAppServerMonitor {
 
         case "item/autoApprovalReview/completed":
             guard let threadId = params["threadId"] as? String else { return }
+            if let session = await SessionStore.shared.session(for: threadId),
+               session.intervention?.metadata["source"] == "guardian_review" {
+                await SessionStore.shared.resolveCodexIntervention(sessionId: threadId, nextPhase: .processing)
+            }
+            _ = try? await readThread(threadId: threadId, includeTurns: true)
+
+        case "serverRequest/resolved":
+            guard let threadId = params["threadId"] as? String,
+                  let requestIdValue = params["requestId"] else {
+                return
+            }
+            let requestId = stringify(requestIdValue)
+            guard pendingRequestsByThread[threadId]?.requestId == requestId else {
+                return
+            }
+            pendingRequestsByThread.removeValue(forKey: threadId)
             await SessionStore.shared.resolveCodexIntervention(sessionId: threadId, nextPhase: .processing)
             _ = try? await readThread(threadId: threadId, includeTurns: true)
+
+        case "thread/settings/updated":
+            guard let threadId = params["threadId"] as? String,
+                  let settings = params["threadSettings"] as? [String: Any] else {
+                return
+            }
+            updateApprovalSettings(threadId: threadId, settings: settings)
 
         case "thread/started":
             if let thread = params["thread"] as? [String: Any] {
@@ -621,6 +660,9 @@ actor CodexAppServerMonitor {
             logger.info("Codex thread archived thread=\(threadId, privacy: .public)")
             rolloutRecoveryVersions.removeValue(forKey: threadId)
             recoveredNotLoadedThreadVersions.removeValue(forKey: threadId)
+            threadApprovalModes.removeValue(forKey: threadId)
+            threadApprovalReviewers.removeValue(forKey: threadId)
+            pendingRequestsByThread.removeValue(forKey: threadId)
             removeThreadDiagnostics(threadId: threadId)
             await SessionStore.shared.process(.sessionEnded(sessionId: threadId))
 
@@ -648,28 +690,75 @@ actor CodexAppServerMonitor {
         return Self.approvalPolicyFromGlobalState(threadId: threadId) == "never"
     }
 
+    private func isAutomaticApprovalReviewThread(_ threadId: String) -> Bool {
+        let reviewer = threadApprovalReviewers[threadId]
+            ?? Self.approvalsReviewerFromGlobalState(threadId: threadId)
+        return !Self.shouldSurfaceAutoApprovalReview(approvalsReviewer: reviewer)
+    }
+
+    private func updateApprovalSettings(threadId: String, settings: [String: Any]) {
+        if let approvalPolicy = settings["approvalPolicy"] as? String {
+            threadApprovalModes[threadId] = approvalPolicy
+        } else {
+            threadApprovalModes.removeValue(forKey: threadId)
+        }
+
+        if let approvalsReviewer = settings["approvalsReviewer"] as? String {
+            threadApprovalReviewers[threadId] = approvalsReviewer
+        } else {
+            threadApprovalReviewers.removeValue(forKey: threadId)
+        }
+    }
+
+    nonisolated static func shouldSurfaceAutoApprovalReview(approvalsReviewer: String?) -> Bool {
+        approvalsReviewer?
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+            .lowercased()
+            .replacingOccurrences(of: "-", with: "_") != "auto_review"
+    }
+
     nonisolated static func approvalPolicyFromGlobalState(threadId: String) -> String? {
         guard
             let data = try? Data(contentsOf: URL(
                 fileURLWithPath: NSHomeDirectory()
                     .appending("/.codex/.codex-global-state.json")
             )),
-            let root = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-            let atomState = root["electron-persisted-atom-state"] as? [String: Any]
+            let root = try? JSONSerialization.jsonObject(with: data) as? [String: Any]
         else {
             return nil
         }
 
-        // Check per-thread heartbeat permissions (most authoritative for Desktop threads).
-        // CLI-only sessions (e.g. agentloop) are not present here; their approval policy
-        // is signalled by permission_mode=bypassPermissions in the hook payload instead.
-        if let permsMap = atomState["heartbeat-thread-permissions-by-id"] as? [String: Any],
-           let entry = permsMap[threadId] as? [String: Any],
-           let policy = entry["approvalPolicy"] as? String {
-            return policy
+        return approvalSettings(from: root, threadId: threadId).approvalPolicy
+    }
+
+    nonisolated static func approvalsReviewerFromGlobalState(threadId: String) -> String? {
+        guard
+            let data = try? Data(contentsOf: URL(
+                fileURLWithPath: NSHomeDirectory()
+                    .appending("/.codex/.codex-global-state.json")
+            )),
+            let root = try? JSONSerialization.jsonObject(with: data) as? [String: Any]
+        else {
+            return nil
         }
 
-        return nil
+        return approvalSettings(from: root, threadId: threadId).approvalsReviewer
+    }
+
+    nonisolated static func approvalSettings(
+        from root: [String: Any],
+        threadId: String
+    ) -> (approvalPolicy: String?, approvalsReviewer: String?) {
+        guard let atomState = root["electron-persisted-atom-state"] as? [String: Any],
+              let permissions = atomState["heartbeat-thread-permissions-by-id"] as? [String: Any],
+              let entry = permissions[threadId] as? [String: Any] else {
+            return (nil, nil)
+        }
+
+        return (
+            entry["approvalPolicy"] as? String,
+            (entry["approvalsReviewer"] as? String) ?? (entry["approvals_reviewer"] as? String)
+        )
     }
 
     private func handleServerRequest(id: String, method: String, params: [String: Any]) async {
@@ -1015,6 +1104,10 @@ actor CodexAppServerMonitor {
         if let mode = rawMode {
             threadApprovalModes[threadId] = mode
         }
+        let rawReviewer = thread["approvalsReviewer"] as? String ?? thread["approvals_reviewer"] as? String
+        if let reviewer = rawReviewer {
+            threadApprovalReviewers[threadId] = reviewer
+        }
         let name = thread["name"] as? String
         let preview = thread["preview"] as? String
         let cwd = thread["cwd"] as? String
@@ -1193,6 +1286,9 @@ actor CodexAppServerMonitor {
         // reflected within the next polling cycle (≤ 30 s).
         if let mode = thread["approvalMode"] as? String ?? thread["approval_mode"] as? String {
             threadApprovalModes[threadId] = mode
+        }
+        if let reviewer = thread["approvalsReviewer"] as? String ?? thread["approvals_reviewer"] as? String {
+            threadApprovalReviewers[threadId] = reviewer
         }
 
         let lifecycleDates = Self.threadLifecycleDates(from: thread)

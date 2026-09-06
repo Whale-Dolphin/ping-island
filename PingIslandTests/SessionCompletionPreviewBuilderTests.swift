@@ -46,6 +46,36 @@ final class SessionCompletionPreviewBuilderTests: XCTestCase {
         XCTAssertEqual(SessionCompletionPreviewBuilder.latestAssistantText(for: session), "最终 结果")
     }
 
+    func testLatestPreviewPrefersFinalHookMessageOverTrailingToolCall() {
+        let session = SessionState(
+            sessionId: "remote-completion-tool-tail",
+            cwd: "/tmp/project/results",
+            latestHookMessage: "最终回答",
+            phase: .waitingForInput,
+            chatItems: [
+                ChatHistoryItem(
+                    id: "tool",
+                    type: .toolCall(
+                        ToolCallItem(
+                            name: "Write",
+                            input: ["file_path": "/tmp/project/result.md"],
+                            status: .success,
+                            result: "created",
+                            structuredResult: nil,
+                            subagentTools: []
+                        )
+                    ),
+                    timestamp: Date(timeIntervalSince1970: 1)
+                )
+            ]
+        )
+
+        XCTAssertEqual(
+            SessionCompletionPreviewBuilder.latestAssistantText(for: session),
+            "最终回答"
+        )
+    }
+
     func testCompactedNotificationSuppressesAssistantPreview() {
         let session = SessionState(
             sessionId: "completion-preview-compacted",

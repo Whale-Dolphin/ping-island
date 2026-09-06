@@ -68,35 +68,35 @@ struct NotchView: View {
 
     /// Whether any tracked session is currently processing or compacting
     private var isAnyProcessing: Bool {
-        sessionMonitor.instances.contains { $0.phase == .processing || $0.phase == .compacting }
+        sessionMonitor.instances.contains(where: \.isExecutionActive)
     }
 
     /// Whether any tracked session has a pending permission request
     private var hasPendingPermission: Bool {
-        sessionMonitor.instances.contains { $0.needsApprovalResponse }
+        sessionMonitor.instances.contains {
+            $0.connectionState == .connected && $0.needsApprovalResponse
+        }
     }
 
     /// Whether any session needs explicit human intervention (for example multi-choice questions).
     private var hasHumanIntervention: Bool {
-        sessionMonitor.instances.contains {
-            $0.phase == .waitingForInput && $0.intervention != nil
-        }
+        sessionMonitor.instances.contains { $0.needsManualAttention && $0.needsQuestionResponse }
     }
 
     /// Whether any session requires a user decision right now.
     private var hasManualAttentionIndicator: Bool {
         sessionMonitor.instances.contains {
-            $0.needsPromptNotification
+            $0.connectionState == .connected && $0.needsPromptNotification
         }
     }
 
     private var activeSessions: [SessionState] {
-        sessionMonitor.instances.filter(\.phase.isActive)
+        sessionMonitor.instances.filter(\.isExecutionActive)
     }
 
     private var countedClosedSessions: [SessionState] {
         sessionMonitor.instances.filter { session in
-            session.phase.isActive || session.phase.needsAttention
+            session.isExecutionActive || session.needsManualAttention
         }
     }
 
@@ -213,13 +213,14 @@ struct NotchView: View {
         }
 
         if let active = sessionMonitor.instances
-            .filter({ $0.phase.isActive })
+            .filter(\.isExecutionActive)
             .sorted(by: { $0.lastActivity > $1.lastActivity })
             .first {
             return active
         }
 
         return sessionMonitor.instances
+            .filter { $0.connectionState == .connected }
             .sorted(by: { $0.lastActivity > $1.lastActivity })
             .first
     }
@@ -1011,7 +1012,7 @@ struct NotchView: View {
     }
 
     private func primeStartupPresentationState(_ instances: [SessionState]) {
-        previousPendingIds = Set(instances.filter(\.needsAttention).map(\.stableId))
+        previousPendingIds = Set(instances.filter(\.needsManualAttention).map(\.stableId))
         previousCompletedReadyIds = Set(
             instances
                 .filter { SessionCompletionStateEvaluator.isCompletedReadySession($0) }
@@ -1067,8 +1068,6 @@ struct NotchView: View {
         if areReminderNotificationsSuppressed {
             return
         }
-
-        clearCompletionNotifications(keepPanelOpen: true)
 
         if viewModel.shouldSuppressAutomaticPresentation {
             return
@@ -1163,21 +1162,11 @@ struct NotchView: View {
             uniqueKeysWithValues: instances.map { ($0.stableId, $0.phase) }
         )
 
-        // Ambient popups are one-shot notifications. If the notch is already expanded for
-        // some other reason, drop new ones instead of queueing them to appear later on
-        // top of the normal expanded UI.
-        if viewModel.status == .opened && activeCompletionNotification == nil {
-            previousCompletionNotificationPhases = currentPhases
-            completionNotificationQueue.removeAll()
-            return
-        }
-
         let newNotifications = instances
             .compactMap { session -> SessionCompletionNotification? in
                 completionNotificationCandidate(
                     for: session,
-                    previousPhase: previousCompletionNotificationPhases[session.stableId],
-                    allSessions: instances
+                    previousPhase: previousCompletionNotificationPhases[session.stableId]
                 )
             }
             .sorted { $0.session.lastActivity < $1.session.lastActivity }
@@ -1192,8 +1181,7 @@ struct NotchView: View {
 
     private func completionNotificationCandidate(
         for session: SessionState,
-        previousPhase: SessionPhase?,
-        allSessions: [SessionState]
+        previousPhase: SessionPhase?
     ) -> SessionCompletionNotification? {
         let kind: SessionCompletionNotification.Kind
         if shouldQueueCompactedNotification(for: session, previousPhase: previousPhase) {
@@ -1207,14 +1195,6 @@ struct NotchView: View {
         }
 
         guard !isCompletionNotificationConsumed(session: session, kind: kind) else {
-            return nil
-        }
-
-        if SessionCompletionNotificationPolicy.hasBlockingActiveSession(
-            for: session,
-            in: allSessions
-        ) {
-            markCompletionNotificationConsumed(session: session, kind: kind)
             return nil
         }
 
@@ -1258,15 +1238,17 @@ struct NotchView: View {
         let sessionsById = Dictionary(uniqueKeysWithValues: instances.map { ($0.stableId, $0) })
 
         if let active = activeCompletionNotification {
-            if let latest = sessionsById[active.session.stableId] {
+            if let latest = sessionsById[active.session.stableId],
+               SessionCompletionNotification.deliveryKey(for: latest, kind: active.kind) == active.deliveryKey {
                 activeCompletionNotification?.session = latest
-            } else {
-                dismissActiveCompletionNotification(closePanel: false, advanceQueue: true)
             }
         }
 
-        completionNotificationQueue = completionNotificationQueue.compactMap { notification in
-            guard let latest = sessionsById[notification.session.stableId] else { return nil }
+        completionNotificationQueue = completionNotificationQueue.map { notification in
+            guard let latest = sessionsById[notification.session.stableId],
+                  SessionCompletionNotification.deliveryKey(for: latest, kind: notification.kind) == notification.deliveryKey else {
+                return notification
+            }
             var updated = notification
             updated.session = latest
             return updated
@@ -1275,13 +1257,13 @@ struct NotchView: View {
 
     private func enqueueCompletionNotification(_ notification: SessionCompletionNotification) {
         if let active = activeCompletionNotification,
-           active.session.stableId == notification.session.stableId {
+           active.deliveryKey == notification.deliveryKey {
             activeCompletionNotification?.session = notification.session
             return
         }
 
         if let queuedIndex = completionNotificationQueue.firstIndex(where: {
-            $0.session.stableId == notification.session.stableId
+            $0.deliveryKey == notification.deliveryKey
         }) {
             var updated = completionNotificationQueue[queuedIndex]
             updated.session = notification.session
@@ -1331,14 +1313,7 @@ struct NotchView: View {
     }
 
     private func isCompletionNotificationPresentable(_ notification: SessionCompletionNotification) -> Bool {
-        guard !isCompletionNotificationConsumed(notification) else { return false }
-        guard SessionCompletionNotificationPolicy.hasRecentNotificationActivity(notification.session) else {
-            return false
-        }
-        return !SessionCompletionNotificationPolicy.hasBlockingActiveSession(
-            for: notification.session,
-            in: sessionMonitor.instances
-        )
+        !isCompletionNotificationConsumed(notification)
     }
 
     private func scheduleCompletionNotificationDismissal(for notificationID: UUID) {
@@ -1429,8 +1404,7 @@ struct NotchView: View {
         session: SessionState,
         kind: SessionCompletionNotification.Kind
     ) -> Bool {
-        guard kind == .completed else { return false }
-        return SessionCompletionNotificationRegistry.shared.isConsumed(session: session)
+        SessionCompletionNotificationRegistry.shared.isConsumed(session: session, kind: kind)
     }
 
     private func isCompletionNotificationConsumed(_ notification: SessionCompletionNotification) -> Bool {
@@ -1441,19 +1415,18 @@ struct NotchView: View {
         session: SessionState,
         kind: SessionCompletionNotification.Kind
     ) {
-        guard kind == .completed else { return }
-        SessionCompletionNotificationRegistry.shared.markConsumed(session: session)
+        SessionCompletionNotificationRegistry.shared.markConsumed(session: session, kind: kind)
     }
 
     private func markCompletionNotificationConsumed(_ notification: SessionCompletionNotification) {
-        markCompletionNotificationConsumed(session: notification.session, kind: notification.kind)
+        SessionCompletionNotificationRegistry.shared.markConsumed(notification)
     }
 
     private func handleSessionSoundTransitions(_ instances: [SessionState]) {
         if !hasPrimedSoundTransitions {
             previousProcessingIds = Set(
                 instances
-                    .filter(\.phase.contributesToProcessingSoundEdge)
+                    .filter(\.contributesToProcessingSoundEdge)
                     .map(\.stableId)
             )
             previousAttentionSoundIds = Set(
@@ -1480,7 +1453,7 @@ struct NotchView: View {
             return
         }
 
-        let processingSessions = instances.filter(\.phase.contributesToProcessingSoundEdge)
+        let processingSessions = instances.filter(\.contributesToProcessingSoundEdge)
         let attentionSessions = instances.filter(
             SessionAttentionSoundEvaluator.shouldContributeToAttentionSoundEdge
         )
@@ -1514,13 +1487,17 @@ struct NotchView: View {
 
         if isNewTaskError {
             playEventSoundIfNeeded(.taskError, sessions: errorSessions)
-        } else if isNewResourceLimit {
+        }
+        if isNewResourceLimit {
             playEventSoundIfNeeded(.resourceLimit, sessions: resourceLimitedSessions)
-        } else if isNewAttention {
+        }
+        if isNewAttention {
             playEventSoundIfNeeded(.attentionRequired, sessions: attentionSessions)
-        } else if isNewCompletion {
+        }
+        if isNewCompletion {
             playEventSoundIfNeeded(.taskCompleted, sessions: newlyCompletedSessions)
-        } else if !newProcessingIds.subtracting(previousProcessingIds).isEmpty {
+        }
+        if !newProcessingIds.subtracting(previousProcessingIds).isEmpty {
             playEventSoundIfNeeded(.processingStarted, sessions: processingSessions)
         }
 
@@ -1577,6 +1554,9 @@ struct NotchView: View {
     /// Returns true if ANY session is not actively focused
     private func shouldPlayNotificationSound(for sessions: [SessionState]) async -> Bool {
         for session in sessions {
+            guard session.ingress.usesLocalProcessNamespace else {
+                return true
+            }
             guard let pid = session.pid else {
                 // No PID means we can't check focus, assume not focused
                 return true

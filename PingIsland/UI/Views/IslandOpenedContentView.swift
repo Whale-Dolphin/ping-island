@@ -10,6 +10,7 @@ struct IslandOpenedContentView: View {
     let activeCompletionNotification: SessionCompletionNotification?
     var highlightedSessionStableID: String? = nil
     var contentWidthOverride: CGFloat? = nil
+    var sessionListDensity: SessionListDensity = .regular
     let onAttentionActionCompleted: () -> Void
     let onCompletionNotificationHoverChanged: (Bool) -> Void
     let onDismissCompletionNotification: () -> Void
@@ -36,13 +37,23 @@ struct IslandOpenedContentView: View {
         IslandExpandedRouteResolver.activePreviewSessions(from: sessionMonitor.instances)
     }
 
+    private var sessionListSessions: [SessionState] {
+        IslandExpandedRouteResolver.sessionListSessions(
+            surface: surface,
+            trigger: trigger,
+            from: sessionMonitor.instances
+        )
+    }
+
     @ViewBuilder
     private var routeContent: some View {
         switch route {
         case .sessionList:
             SessionListView(
+                sessions: sessionListSessions,
                 sessionMonitor: sessionMonitor,
                 viewModel: viewModel,
+                density: sessionListDensity,
                 enableKeyboardNavigation: surface == .docked,
                 highlightedSessionStableID: highlightedSessionStableID
             )
@@ -51,6 +62,11 @@ struct IslandOpenedContentView: View {
                 sessions: hoverPreviewSessions,
                 sessionMonitor: sessionMonitor,
                 density: surface == .floating ? .detachedCompact : .regular,
+                hidesSessionPreviews: surface == .floating
+                    && DetachedIslandContentModel.hoverDashboardUsesCondensedRows(
+                        for: hoverPreviewSessions,
+                        viewModel: viewModel
+                    ),
                 onQuestionInteractionStateChanged: { viewModel.setInlineTextInputActive($0) }
             )
         case .attentionNotification(let session):

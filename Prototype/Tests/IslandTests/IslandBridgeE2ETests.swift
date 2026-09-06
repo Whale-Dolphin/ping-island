@@ -378,14 +378,80 @@ func remoteAgentFailsOpenWhenNoControlClientIsAttached() async throws {
 }
 
 @Test
+func remoteAgentForwardsCodexAutomaticApprovalReviewMetadata() async throws {
+    let executable = try TestRuntime.executableURL(named: "PingIslandBridge")
+    let socketID = UUID().uuidString.prefix(8)
+    let hookSocketPath = "/tmp/pi-\(socketID)-h.sock"
+    let controlSocketPath = "/tmp/pi-\(socketID)-c.sock"
+
+    let service = try RunningProcess(
+        executableURL: executable,
+        arguments: [
+            "--mode", "remote-agent-service",
+            "--hook-socket", hookSocketPath,
+            "--control-socket", controlSocketPath
+        ]
+    )
+    defer {
+        service.terminate()
+        _ = service.waitForExit()
+        try? FileManager.default.removeItem(atPath: hookSocketPath)
+        try? FileManager.default.removeItem(atPath: controlSocketPath)
+        try? FileManager.default.removeItem(atPath: controlSocketPath + ".outbox")
+    }
+
+    try await waitUntil(description: "remote agent service should create sockets") {
+        FileManager.default.fileExists(atPath: hookSocketPath)
+            && FileManager.default.fileExists(atPath: controlSocketPath)
+    }
+
+    let hookRequest = Task.detached {
+        try TestSocketClient.send(
+            envelope: BridgeEnvelope(
+                provider: .codex,
+                eventType: "PermissionRequest",
+                sessionKey: "codex:remote-auto-review",
+                title: "Bash",
+                preview: "Run tests",
+                cwd: "/tmp/remote-auto-review",
+                status: SessionStatus(kind: .waitingForApproval),
+                expectsResponse: true,
+                metadata: [
+                    "session_id": "remote-auto-review",
+                    "tool_name": "Bash",
+                    "permission_mode": "default",
+                    "approvals_reviewer": "auto_review"
+                ]
+            ),
+            socketPath: hookSocketPath
+        )
+    }
+
+    let event = try await readRemoteHookEvent(
+        controlSocketPath: controlSocketPath,
+        matching: { $0.payload.sessionID == "remote-auto-review" }
+    )
+    #expect(event.payload.permissionMode == "default")
+    #expect(event.payload.approvalsReviewer == "auto_review")
+
+    let response = try await hookRequest.value
+    #expect(response.decision == nil)
+}
+
+@Test
 func remoteAgentForwardsCodexAppServerStateUpdates() async throws {
     try await withTemporaryDirectory { directory in
         let executable = try TestRuntime.executableURL(named: "PingIslandBridge")
         let codexHome = directory.appending(path: ".codex", directoryHint: .isDirectory)
         try FileManager.default.createDirectory(at: codexHome, withIntermediateDirectories: true)
+        let rolloutURL = directory.appending(path: "rollout.jsonl")
+        try """
+        {"type":"event_msg","payload":{"type":"task_started"}}
+        """.write(to: rolloutURL, atomically: true, encoding: .utf8)
         try createCodexStateDatabase(
             at: codexHome.appending(path: "state_5.sqlite"),
-            updatedAtMs: Int64(Date().timeIntervalSince1970 * 1000)
+            updatedAtMs: Int64(Date().timeIntervalSince1970 * 1000),
+            rolloutPath: rolloutURL.path()
         )
 
         let socketID = UUID().uuidString.prefix(8)
@@ -405,6 +471,7 @@ func remoteAgentForwardsCodexAppServerStateUpdates() async throws {
             _ = service.waitForExit()
             try? FileManager.default.removeItem(atPath: hookSocketPath)
             try? FileManager.default.removeItem(atPath: controlSocketPath)
+            try? FileManager.default.removeItem(atPath: controlSocketPath + ".outbox")
         }
 
         try await waitUntil(description: "remote agent service should create control socket") {
@@ -423,8 +490,128 @@ func remoteAgentForwardsCodexAppServerStateUpdates() async throws {
         #expect(event.payload.message == "Remote Codex is editing files")
         #expect(event.payload.clientInfo.kind == "codexCLI")
         #expect(event.payload.clientInfo.transport == "ssh")
-        #expect(event.payload.clientInfo.sessionFilePath == "/home/dev/.codex/sessions/rollout.jsonl")
+        #expect(event.payload.clientInfo.sessionFilePath == rolloutURL.path())
     }
+}
+
+@Test
+func remoteAgentDoesNotReportCompletedCodexRolloutAsProcessing() async throws {
+    try await withTemporaryDirectory { directory in
+        let executable = try TestRuntime.executableURL(named: "PingIslandBridge")
+        let codexHome = directory.appending(path: ".codex", directoryHint: .isDirectory)
+        try FileManager.default.createDirectory(at: codexHome, withIntermediateDirectories: true)
+        let rolloutURL = directory.appending(path: "rollout.jsonl")
+        try """
+        {"type":"event_msg","payload":{"type":"task_started"}}
+        {"type":"event_msg","payload":{"type":"task_complete"}}
+        """.write(to: rolloutURL, atomically: true, encoding: .utf8)
+        try createCodexStateDatabase(
+            at: codexHome.appending(path: "state_5.sqlite"),
+            updatedAtMs: Int64(Date().timeIntervalSince1970 * 1000),
+            rolloutPath: rolloutURL.path()
+        )
+
+        let socketID = UUID().uuidString.prefix(8)
+        let hookSocketPath = "/tmp/pi-\(socketID)-h.sock"
+        let controlSocketPath = "/tmp/pi-\(socketID)-c.sock"
+        let service = try RunningProcess(
+            executableURL: executable,
+            arguments: [
+                "--mode", "remote-agent-service",
+                "--hook-socket", hookSocketPath,
+                "--control-socket", controlSocketPath
+            ],
+            environment: ["HOME": directory.path()]
+        )
+        defer {
+            service.terminate()
+            _ = service.waitForExit()
+            try? FileManager.default.removeItem(atPath: hookSocketPath)
+            try? FileManager.default.removeItem(atPath: controlSocketPath)
+            try? FileManager.default.removeItem(atPath: controlSocketPath + ".outbox")
+        }
+
+        try await waitUntil(description: "remote agent service should create control socket") {
+            FileManager.default.fileExists(atPath: controlSocketPath)
+        }
+
+        let event = try await readRemoteHookEvent(
+            controlSocketPath: controlSocketPath,
+            matching: { $0.payload.sessionID == "remote-codex-thread" }
+        )
+
+        #expect(event.payload.status == "idle")
+    }
+}
+
+@Test
+func remoteAgentReplaysUnacknowledgedEventAfterServiceRestart() async throws {
+    let executable = try TestRuntime.executableURL(named: "PingIslandBridge")
+    let socketID = UUID().uuidString.prefix(8)
+    let hookSocketPath = "/tmp/pi-\(socketID)-h.sock"
+    let controlSocketPath = "/tmp/pi-\(socketID)-c.sock"
+    let outboxPath = controlSocketPath + ".outbox"
+    let requestID = UUID()
+    let arguments = [
+        "--mode", "remote-agent-service",
+        "--hook-socket", hookSocketPath,
+        "--control-socket", controlSocketPath
+    ]
+
+    let firstService = try RunningProcess(executableURL: executable, arguments: arguments)
+    defer {
+        firstService.terminate()
+        if firstService.isRunning { _ = firstService.waitForExit() }
+    }
+    try await waitUntil(description: "first remote agent service should create sockets") {
+        FileManager.default.fileExists(atPath: hookSocketPath)
+            && FileManager.default.fileExists(atPath: controlSocketPath)
+    }
+
+    _ = try TestSocketClient.send(
+        envelope: BridgeEnvelope(
+            id: requestID,
+            provider: .claude,
+            eventType: "Stop",
+            sessionKey: "claude:remote-replay",
+            title: nil,
+            preview: "finished remotely",
+            cwd: "/tmp/remote-replay",
+            status: SessionStatus(kind: .completed),
+            expectsResponse: false,
+            metadata: ["session_id": "remote-replay"]
+        ),
+        socketPath: hookSocketPath
+    )
+    try await waitUntil(description: "remote event should be persisted before attach") {
+        ((try? Data(contentsOf: URL(fileURLWithPath: outboxPath)).isEmpty) == false)
+    }
+    let outboxAttributes = try FileManager.default.attributesOfItem(atPath: outboxPath)
+    #expect((outboxAttributes[.posixPermissions] as? NSNumber)?.intValue == 0o600)
+
+    firstService.terminate()
+    _ = firstService.waitForExit()
+    try? FileManager.default.removeItem(atPath: hookSocketPath)
+    try? FileManager.default.removeItem(atPath: controlSocketPath)
+
+    let secondService = try RunningProcess(executableURL: executable, arguments: arguments)
+    defer {
+        secondService.terminate()
+        _ = secondService.waitForExit()
+        try? FileManager.default.removeItem(atPath: hookSocketPath)
+        try? FileManager.default.removeItem(atPath: controlSocketPath)
+        try? FileManager.default.removeItem(atPath: outboxPath)
+    }
+    try await waitUntil(description: "restarted remote agent service should create control socket") {
+        FileManager.default.fileExists(atPath: controlSocketPath)
+    }
+
+    let replayedEvent = try await readRemoteHookEvent(
+        controlSocketPath: controlSocketPath,
+        matching: { $0.payload.requestID == requestID }
+    )
+    #expect(replayedEvent.payload.sessionID == "remote-replay")
+    #expect(replayedEvent.payload.status == "ended")
 }
 
 private func bridgeTestEnvironment(_ values: [String: String] = [:]) -> [String: String] {
@@ -434,7 +621,11 @@ private func bridgeTestEnvironment(_ values: [String: String] = [:]) -> [String:
     return environment
 }
 
-private func createCodexStateDatabase(at url: URL, updatedAtMs: Int64) throws {
+private func createCodexStateDatabase(
+    at url: URL,
+    updatedAtMs: Int64,
+    rolloutPath: String
+) throws {
     try runSQLite(
         databaseURL: url,
         sql: """
@@ -455,7 +646,7 @@ private func createCodexStateDatabase(at url: URL, updatedAtMs: Int64) throws {
         );
         INSERT INTO threads VALUES (
           'remote-codex-thread',
-          '/home/dev/.codex/sessions/rollout.jsonl',
+          '\(rolloutPath)',
           1,
           1,
           'vscode',
@@ -527,10 +718,13 @@ private struct TestRemoteHookEventMessage: Decodable {
 }
 
 private struct TestRemoteHookEventPayload: Decodable {
+    let requestID: UUID
     let sessionID: String
     let cwd: String
     let status: String
     let provider: String
+    let permissionMode: String?
+    let approvalsReviewer: String?
     let message: String?
     let clientInfo: TestRemoteHookClientInfoPayload
 }

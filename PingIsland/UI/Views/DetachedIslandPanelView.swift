@@ -83,6 +83,16 @@ enum DetachedIslandPanelMetrics {
     }
 }
 
+enum DetachedFloatingPetAppearance {
+    static func isDark(_ appearance: NSAppearance) -> Bool {
+        appearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua
+    }
+
+    static func activeCountColor(isDark: Bool) -> Color {
+        isDark ? .white : .black
+    }
+}
+
 enum DetachedIslandBubblePlacement: CaseIterable, Equatable {
     case topLeft
     case topRight
@@ -189,7 +199,7 @@ enum DetachedIslandContentModel {
     }
 
     static func activeCount(from sessions: [SessionState]) -> Int {
-        sessions.filter { $0.phase.isActive }.count
+        sessions.filter(\.isExecutionActive).count
     }
 
     static func canPresentBubble(
@@ -205,7 +215,11 @@ enum DetachedIslandContentModel {
             return IslandExpandedRouteResolver.highestPriorityAttentionSession(from: sessions) != nil
                 || !IslandExpandedRouteResolver.activePreviewSessions(from: sessions).isEmpty
         case .pinnedList:
-            return !sortedSessions(from: sessions).isEmpty
+            return !IslandExpandedRouteResolver.sessionListSessions(
+                surface: .floating,
+                trigger: .pinnedList,
+                from: sessions
+            ).isEmpty
         }
     }
 
@@ -245,18 +259,31 @@ enum DetachedIslandContentModel {
         switch route {
         case .sessionList:
             let width = min(widthLimit, 448)
-            let sorted = sortedSessions(from: sessions)
-            let estimatedHeight = sessionListEstimatedHeight(for: sorted)
+            let sorted = IslandExpandedRouteResolver.sessionListSessions(
+                surface: .floating,
+                trigger: .pinnedList,
+                from: sessions
+            )
+            let density = sessionListDensity(
+                for: sorted,
+                viewModel: viewModel,
+                additionalFooterHeight: additionalFooterHeight
+            )
+            let estimatedHeight = sessionListEstimatedHeight(for: sorted, density: density)
             let height = min(
-                viewModel.screenRect.height - 160,
+                maximumBubbleContentHeight(for: viewModel),
                 max(96, estimatedHeight + additionalFooterHeight)
             )
             return CGSize(width: width, height: height)
         case .hoverDashboard:
             let width = min(widthLimit, 392)
-            let visibleCount = max(min(IslandExpandedRouteResolver.activePreviewSessions(from: sessions).count, 3), 1)
-            let estimatedHeight = 18 + (CGFloat(visibleCount) * 94)
-            let height = min(viewModel.screenRect.height - 160, max(120, estimatedHeight))
+            let sessionCount = max(IslandExpandedRouteResolver.activePreviewSessions(from: sessions).count, 1)
+            let rowHeight: CGFloat = hoverDashboardUsesCondensedRows(
+                for: sessions,
+                viewModel: viewModel
+            ) ? 48 : 94
+            let estimatedHeight = 18 + (CGFloat(sessionCount) * rowHeight)
+            let height = min(maximumBubbleContentHeight(for: viewModel), max(120, estimatedHeight))
             return CGSize(width: width, height: height)
         case .attentionNotification(let session):
             let width = min(widthLimit, 392)
@@ -288,22 +315,61 @@ enum DetachedIslandContentModel {
         }
     }
 
-    private static func sessionListEstimatedHeight(for sessions: [SessionState]) -> CGFloat {
+    static func sessionListDensity(
+        for sessions: [SessionState],
+        viewModel: NotchViewModel,
+        additionalFooterHeight: CGFloat = 0
+    ) -> SessionListDensity {
+        let regularHeight = sessionListEstimatedHeight(for: sessions, density: .regular)
+            + additionalFooterHeight
+        return regularHeight <= maximumBubbleContentHeight(for: viewModel)
+            ? .regular
+            : .constrained
+    }
+
+    static func hoverDashboardUsesCondensedRows(
+        for sessions: [SessionState],
+        viewModel: NotchViewModel
+    ) -> Bool {
+        let sessionCount = max(
+            IslandExpandedRouteResolver.activePreviewSessions(from: sessions).count,
+            1
+        )
+        let regularHeight = 18 + (CGFloat(sessionCount) * 94)
+        return regularHeight > maximumBubbleContentHeight(for: viewModel)
+    }
+
+    private static func maximumBubbleContentHeight(for viewModel: NotchViewModel) -> CGFloat {
+        max(96, viewModel.screenRect.height - 160)
+    }
+
+    private static func sessionListEstimatedHeight(
+        for sessions: [SessionState],
+        density: SessionListDensity
+    ) -> CGFloat {
         guard !sessions.isEmpty else { return 96 }
 
         let contentHeight = sessions.reduce(CGFloat(0)) { partial, session in
-            partial + sessionListRowHeight(for: session)
+            partial + sessionListRowHeight(for: session, density: density)
         }
         let spacing = CGFloat(max(0, sessions.count - 1)) * 2
         let verticalInsets: CGFloat = 8
         return contentHeight + spacing + verticalInsets
     }
 
-    private static func sessionListRowHeight(for session: SessionState) -> CGFloat {
+    private static func sessionListRowHeight(
+        for session: SessionState,
+        density: SessionListDensity
+    ) -> CGFloat {
         if session.needsQuestionResponse || session.needsApprovalResponse || session.needsManualAttention {
             return 86
         }
-        if session.phase.isActive {
+        if density == .constrained {
+            return session.shouldUseMinimalCompactPresentation || session.usesTitleOnlySubagentPresentation
+                ? 40
+                : 52
+        }
+        if session.isExecutionActive {
             return 74
         }
         if session.shouldUseMinimalCompactPresentation || session.usesTitleOnlySubagentPresentation {
@@ -680,6 +746,22 @@ struct DetachedIslandPanelView: View {
         )
     }
 
+    private var sessionListDensity: SessionListDensity {
+        guard bubbleRoute == .sessionList else { return .regular }
+        let sessions = IslandExpandedRouteResolver.sessionListSessions(
+            surface: .floating,
+            trigger: .pinnedList,
+            from: sortedSessions
+        )
+        return DetachedIslandContentModel.sessionListDensity(
+            for: sessions,
+            viewModel: viewModel,
+            additionalFooterHeight: shouldShowFloatingUsageFooter
+                ? DetachedIslandPanelMetrics.usageFooterReservedHeight
+                : 0
+        )
+    }
+
     private var layout: DetachedIslandWindowLayout {
         DetachedIslandContentModel.layout(
             for: sortedSessions,
@@ -865,6 +947,7 @@ struct DetachedIslandPanelView: View {
                         ? bubbleViewState.highlightedSessionStableID
                         : nil,
                     contentWidthOverride: contentWidth,
+                    sessionListDensity: sessionListDensity,
                     onAttentionActionCompleted: onAttentionActionCompleted,
                     onCompletionNotificationHoverChanged: onCompletionNotificationHoverChanged,
                     onDismissCompletionNotification: onDismissCompletionNotification
@@ -933,6 +1016,9 @@ private struct DetachedFloatingPetInteractionView: View {
     let onDragStarted: () -> Void
     let onDragChanged: (CGSize) -> Void
     let onDragEnded: () -> Void
+    @State private var isDarkSystemAppearance = DetachedFloatingPetAppearance.isDark(
+        NSApplication.shared.effectiveAppearance
+    )
 
     var body: some View {
         ZStack(alignment: .bottomTrailing) {
@@ -985,13 +1071,16 @@ private struct DetachedFloatingPetInteractionView: View {
                 height: petMetrics.petHitFrame
             )
         }
+        .onReceive(NSApplication.shared.publisher(for: \.effectiveAppearance)) { appearance in
+            isDarkSystemAppearance = DetachedFloatingPetAppearance.isDark(appearance)
+        }
     }
 
     @ViewBuilder
     private var activeCountBadge: some View {
         PixelNumberView(
             value: activeCount,
-            color: .white.opacity(0.96),
+            color: DetachedFloatingPetAppearance.activeCountColor(isDark: isDarkSystemAppearance),
             fontSize: activeCount >= 10 ? 8.2 : 9.2,
             weight: .semibold,
             tracking: activeCount >= 10 ? -0.15 : -0.05

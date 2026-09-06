@@ -50,6 +50,7 @@ struct SessionCompletionNotification: Equatable, Identifiable {
     var session: SessionState
     let kind: Kind
     let queuedAt: Date
+    let deliveryKey: String
 
     init(
         id: UUID = UUID(),
@@ -61,6 +62,12 @@ struct SessionCompletionNotification: Equatable, Identifiable {
         self.session = session
         self.kind = kind
         self.queuedAt = queuedAt
+        self.deliveryKey = Self.deliveryKey(for: session, kind: kind)
+    }
+
+    static func deliveryKey(for session: SessionState, kind: Kind) -> String {
+        let activityMilliseconds = Int64((session.lastActivity.timeIntervalSince1970 * 1_000).rounded())
+        return "\(kind.rawValue):\(session.sessionId):\(activityMilliseconds)"
     }
 }
 
@@ -75,18 +82,20 @@ enum SessionCompletionPreviewBuilder {
     }
 
     static func latestAssistantText(for session: SessionState) -> String? {
+        var activityFallback: String?
+
         for item in session.chatItems.reversed() {
             switch item.type {
             case .assistant(let text):
                 return sanitized(text)
             case .thinking(let text):
-                return sanitized(text)
+                activityFallback = activityFallback ?? sanitized(text)
             case .toolCall(let tool):
                 let preview = sanitized(tool.inputPreview)
                 let label = MCPToolFormatter.formatToolName(tool.name)
-                return preview.map { "\(label) \($0)" } ?? label
+                activityFallback = activityFallback ?? (preview.map { "\(label) \($0)" } ?? label)
             case .interrupted:
-                return "已中断"
+                activityFallback = activityFallback ?? "已中断"
             case .user:
                 continue
             }
@@ -96,7 +105,9 @@ enum SessionCompletionPreviewBuilder {
             return sanitized(intervention.summaryText)
         }
 
-        return sanitized(session.previewText) ?? sanitized(session.lastMessage)
+        return sanitized(session.previewText)
+            ?? sanitized(session.lastMessage)
+            ?? activityFallback
     }
 
     static func latestAssistantText(
@@ -120,14 +131,12 @@ enum SessionCompletionPreviewBuilder {
 enum SessionCompletionStateEvaluator {
     static func isCompletedReadySession(_ session: SessionState) -> Bool {
         guard session.intervention == nil else { return false }
-        guard session.phase == .waitingForInput || isCompletedCodexIdleSession(session) else {
-            return false
-        }
-        return hasCompletedAssistantReply(for: session)
+        return session.phase == .waitingForInput || isCompletedIdleSession(session)
     }
 
-    private static func isCompletedCodexIdleSession(_ session: SessionState) -> Bool {
-        session.provider == .codex && session.phase == .idle
+    private static func isCompletedIdleSession(_ session: SessionState) -> Bool {
+        guard session.phase == .idle else { return false }
+        return session.provider == .codex || session.clientInfo.brand == .opencode
     }
 
     static func allowsEndedNotificationAfterWaitingForInput(_ session: SessionState) -> Bool {
@@ -158,24 +167,30 @@ enum SessionCompletionStateEvaluator {
 final class SessionCompletionNotificationRegistry {
     static let shared = SessionCompletionNotificationRegistry()
 
-    private var consumedCodexCompletionKeys = Set<String>()
+    private var consumedCompletionKeys = Set<String>()
 
     private init() {}
 
-    func isConsumed(session: SessionState) -> Bool {
-        guard let key = codexCompletionKey(for: session) else { return false }
-        return consumedCodexCompletionKeys.contains(key)
+    func isConsumed(
+        session: SessionState,
+        kind: SessionCompletionNotification.Kind
+    ) -> Bool {
+        consumedCompletionKeys.contains(
+            SessionCompletionNotification.deliveryKey(for: session, kind: kind)
+        )
     }
 
-    func markConsumed(session: SessionState) {
-        guard let key = codexCompletionKey(for: session) else { return }
-        consumedCodexCompletionKeys.insert(key)
+    func markConsumed(_ notification: SessionCompletionNotification) {
+        consumedCompletionKeys.insert(notification.deliveryKey)
     }
 
-    private func codexCompletionKey(for session: SessionState) -> String? {
-        guard session.provider == .codex else { return nil }
-        let activityMilliseconds = Int64((session.lastActivity.timeIntervalSince1970 * 1_000).rounded())
-        return "\(session.sessionId):\(activityMilliseconds)"
+    func markConsumed(
+        session: SessionState,
+        kind: SessionCompletionNotification.Kind
+    ) {
+        consumedCompletionKeys.insert(
+            SessionCompletionNotification.deliveryKey(for: session, kind: kind)
+        )
     }
 }
 
@@ -199,7 +214,16 @@ enum SessionCompletionNotificationPolicy {
             return wasTrackedOrRecentlyCreated(session, previousPhase: previousPhase, now: now)
         }
 
-        guard previousPhase != .waitingForInput else { return false }
+        if session.phase == .idle {
+            guard previousPhase != .idle else { return false }
+        } else {
+            guard previousPhase != .waitingForInput else { return false }
+        }
+        if previousPhase == nil {
+            guard SessionCompletionStateEvaluator.hasCompletedAssistantReply(for: session) else {
+                return false
+            }
+        }
         return wasTrackedOrRecentlyCreated(session, previousPhase: previousPhase, now: now)
     }
 
@@ -240,32 +264,11 @@ enum SessionCompletionNotificationPolicy {
         now.timeIntervalSince(session.lastActivity) <= notificationRecencyWindow
     }
 
-    static func hasBlockingActiveSession(
-        for session: SessionState,
-        in sessions: [SessionState]
-    ) -> Bool {
-        sessions.contains { candidate in
-            guard candidate.stableId != session.stableId else { return false }
-            return isBlockingActiveSession(candidate)
-        }
-    }
-
     private static func isCodexCompletionSourcePhase(_ phase: SessionPhase) -> Bool {
         switch phase {
         case .processing, .waitingForInput, .waitingForApproval:
             return true
         case .idle, .ended, .compacting:
-            return false
-        }
-    }
-
-    private static func isBlockingActiveSession(_ session: SessionState) -> Bool {
-        switch session.phase {
-        case .processing, .waitingForApproval, .compacting:
-            return true
-        case .waitingForInput:
-            return !SessionCompletionStateEvaluator.isCompletedReadySession(session)
-        case .idle, .ended:
             return false
         }
     }
@@ -323,7 +326,7 @@ struct SessionCompletionNotificationView: View {
     }
 
     private var assistantPrefixColor: Color {
-        providerTint.opacity(session.phase.isActive ? 0.96 : 0.9)
+        providerTint.opacity(session.isExecutionActive ? 0.96 : 0.9)
     }
 
     private var assistantTextColor: Color {

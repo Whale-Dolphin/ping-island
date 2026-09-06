@@ -82,8 +82,19 @@ enum IslandExpandedRouteResolver {
 
     nonisolated static func activePreviewSessions(from sessions: [SessionState]) -> [SessionState] {
         orderedSessions(from: sessions).filter {
-            $0.phase.isActive || $0.phase == .waitingForInput || $0.isRecentlyCompleted
+            $0.isExecutionActive || $0.needsManualAttention
         }
+    }
+
+    nonisolated static func sessionListSessions(
+        surface: IslandExpandedSurface,
+        trigger: IslandExpandedTrigger,
+        from sessions: [SessionState]
+    ) -> [SessionState] {
+        if case (.floating, .pinnedList) = (surface, trigger) {
+            return activePreviewSessions(from: sessions)
+        }
+        return orderedSessions(from: sessions)
     }
 
     nonisolated static func highestPriorityAttentionSession(from sessions: [SessionState]) -> SessionState? {

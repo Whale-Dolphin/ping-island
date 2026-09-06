@@ -2,6 +2,39 @@ import XCTest
 @testable import Ping_Island
 
 final class HookEventResponseRoutingTests: XCTestCase {
+    func testCodexAutomaticApprovalReviewIsDetectedFromBridgeMetadata() {
+        XCTAssertTrue(CodexAutomaticApprovalReviewResolver.shouldDeferToCodex(
+            provider: "codex",
+            eventType: "PermissionRequest",
+            metadata: [
+                "permission_mode": "default",
+                "approvals_reviewer": "auto_review"
+            ]
+        ))
+    }
+
+    func testCodexManualReviewerKeepsPingIslandApprovalPath() {
+        XCTAssertFalse(CodexAutomaticApprovalReviewResolver.shouldDeferToCodex(
+            provider: "codex",
+            eventType: "PermissionRequest",
+            metadata: [
+                "permission_mode": "default",
+                "approvals_reviewer": "guardian_subagent"
+            ]
+        ))
+    }
+
+    func testCodexBypassPermissionsKeepsExistingApprovalPath() {
+        XCTAssertFalse(CodexAutomaticApprovalReviewResolver.shouldDeferToCodex(
+            provider: "codex",
+            eventType: "PermissionRequest",
+            metadata: [
+                "permission_mode": "bypassPermissions",
+                "approvals_reviewer": "auto_review"
+            ]
+        ))
+    }
+
     func testTerminalRoutedPermissionRequestStillExpectsResponse() {
         let event = HookEvent(
             sessionId: "claude-session",
@@ -171,4 +204,5 @@ final class HookEventResponseRoutingTests: XCTestCase {
         XCTAssertFalse(event.isAskUserQuestionRequest)
         XCTAssertTrue(event.expectsResponse)
     }
+
 }

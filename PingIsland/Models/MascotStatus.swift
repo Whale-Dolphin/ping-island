@@ -31,9 +31,7 @@ extension MascotStatus {
         }
     }
 
-    /// Closed-notch mascot behavior is intentionally more "alive" than row-level status:
-    /// once a warning is handled, any still-live session should return to the active animation
-    /// until it actually ends or disappears from the compact surface.
+    /// Keep the closed-notch mascot aligned with actual execution or intervention state.
     static func closedNotchStatus(
         representativePhase: SessionPhase?,
         hasPendingPermission: Bool,
@@ -43,15 +41,13 @@ extension MascotStatus {
             return .warning
         }
 
-        guard let representativePhase else {
-            return .idle
-        }
-
         switch representativePhase {
-        case .ended:
-            return .idle
-        case .idle, .processing, .waitingForInput, .waitingForApproval, .compacting:
+        case .processing, .compacting:
             return .working
+        case .waitingForApproval:
+            return .warning
+        case .idle, .waitingForInput, .ended, nil:
+            return .idle
         }
     }
 }

@@ -1357,6 +1357,26 @@ struct PendingPermission: Sendable {
 typealias HookEventHandler = @Sendable (HookEvent) -> Void
 typealias PermissionFailureHandler = @Sendable (_ sessionId: String, _ toolUseId: String) -> Void
 
+enum CodexAutomaticApprovalReviewResolver {
+    static func shouldDeferToCodex(
+        provider: String,
+        eventType: String,
+        metadata: [String: String]
+    ) -> Bool {
+        guard provider == BridgeProvider.codex.rawValue,
+              eventType == "PermissionRequest",
+              metadata["permission_mode"] != "bypassPermissions" else {
+            return false
+        }
+
+        return (metadata["approvals_reviewer"] ?? metadata["approval_reviewer"])?
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+            .lowercased()
+            .replacingOccurrences(of: "-", with: "_")
+            == "auto_review"
+    }
+}
+
 class HookSocketServer {
     static let shared = HookSocketServer()
     static var socketPath: String { BridgeRuntimePaths.socketPath }
@@ -1959,6 +1979,19 @@ class HookSocketServer {
 
         if event.event == "SessionEnd" {
             cleanupCache(sessionId: event.sessionId)
+        }
+
+        if expectsResponse,
+           CodexAutomaticApprovalReviewResolver.shouldDeferToCodex(
+               provider: envelope.provider.rawValue,
+               eventType: envelope.eventType,
+               metadata: envelope.metadata
+           ) {
+            logger.notice(
+                "Deferring Codex approval to automatic reviewer session=\(event.sessionId.prefix(8), privacy: .public)"
+            )
+            sendAcknowledgement(for: envelope.id, to: clientSocket)
+            return
         }
 
         if expectsResponse {

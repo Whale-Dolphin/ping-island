@@ -61,6 +61,7 @@ actor SessionStore {
     private var pendingCodeBuddyCLIQuestionPolls: [String: (id: UUID, task: Task<Void, Never>)] = [:]
     private var lastCodexRolloutParseAt: [String: Date] = [:]
     private var codexRolloutParsesInFlight: Set<String> = []
+    private var deferredCodexRolloutSyncs: Set<String> = []
     private var codexSessionAliases: [String: String] = [:]
     private var ignoredCodexAuxiliaryHookSessionIds: Set<String> = []
     private var recentlyResolvedClaudeQuestionKeys: [String: Date] = [:]
@@ -403,7 +404,9 @@ actor SessionStore {
             Self.logger.notice(
                 "Suppressing bypassPermissions hook session=\(sessionId.prefix(8), privacy: .public)"
             )
-            HookSocketServer.shared.respondToPermissionBySession(sessionId: sessionId, decision: "approve")
+            await MainActor.run {
+                HookSocketServer.shared.respondToPermissionBySession(sessionId: sessionId, decision: "approve")
+            }
             return
         }
 
@@ -429,7 +432,10 @@ actor SessionStore {
             }
         }
 
-        let tree = (event.pid != nil || event.tty != nil) ? ProcessTreeBuilder.shared.buildTree() : [:]
+        let canInspectProcessLocally = event.ingress.usesLocalProcessNamespace
+        let tree = canInspectProcessLocally && (event.pid != nil || event.tty != nil)
+            ? ProcessTreeBuilder.shared.buildTree()
+            : [:]
         let hadActiveClaudeQuestion = session.intervention?.kind == .question
             && session.clientInfo.isPlainClaudeCodeRouting
 
@@ -437,15 +443,19 @@ actor SessionStore {
         session.clientInfo = session.clientInfo.merged(with: event.clientInfo)
         session.clientInfo = normalizedClientInfo(session.clientInfo, provider: event.provider, sessionId: sessionId)
         session.ingress = event.ingress
+        if event.ingress == .remoteBridge {
+            session.connectionState = .connected
+        }
         applyHookWorkspace(event.cwd, to: &session)
         session.pid = event.pid
-        if let pid = event.pid {
+        if canInspectProcessLocally, let pid = event.pid {
             session.isInTmux = ProcessTreeBuilder.shared.isInTmux(pid: pid, tree: tree)
         }
         if let tty = event.tty {
             session.tty = tty.replacingOccurrences(of: "/dev/", with: "")
         }
-        if let runtimeClientInfo = await runtimeClientInfo(for: session, tree: tree) {
+        if canInspectProcessLocally,
+           let runtimeClientInfo = await runtimeClientInfo(for: session, tree: tree) {
             session.clientInfo = session.clientInfo.merged(with: runtimeClientInfo)
             session.clientInfo = normalizedClientInfo(session.clientInfo, provider: event.provider, sessionId: sessionId)
         }
@@ -502,6 +512,9 @@ actor SessionStore {
         // its turn. Set lastMessageRole so completion notifications/sounds fire.
         if session.clientInfo.isKimiClient {
             processKimiHookCompletion(event: event, session: &session)
+        }
+        if session.clientInfo.brand == .opencode {
+            processOpenCodeHookCompletion(event: event, session: &session)
         }
 
         let shouldPreserveEndedStopForAnsweredQuestion =
@@ -820,14 +833,18 @@ actor SessionStore {
         let resolvedCwd = event.cwd.isEmpty ? (restoredAssociation?.cwd ?? "") : event.cwd
         let restoredCwdMatches = Self.normalizedPath(restoredAssociation?.cwd ?? "")
             == Self.normalizedPath(resolvedCwd)
-        let projectName = (restoredCwdMatches ? restoredAssociation?.projectName : nil)
-            ?? Self.projectName(for: resolvedCwd, fallback: event.provider.displayName)
         let restoredClientInfo = restoredAssociation?.clientInfo ?? SessionClientInfo.default(for: event.provider)
         let resolvedClientInfo = normalizedClientInfo(
             restoredClientInfo.merged(with: event.clientInfo),
             provider: event.provider,
             sessionId: event.sessionId
         )
+        let projectName = Self.claudeTranscriptProjectName(
+            cwd: resolvedCwd,
+            sessionFilePath: resolvedClientInfo.sessionFilePath
+        )
+            ?? (restoredCwdMatches ? restoredAssociation?.projectName : nil)
+            ?? Self.projectName(for: resolvedCwd, fallback: event.provider.displayName)
 
         return SessionState(
             sessionId: event.sessionId,
@@ -845,14 +862,23 @@ actor SessionStore {
     }
 
     private nonisolated func applyHookWorkspace(_ incomingCwd: String, to session: inout SessionState) {
+        let transcriptProjectName = Self.claudeTranscriptProjectName(
+            cwd: incomingCwd,
+            sessionFilePath: session.clientInfo.sessionFilePath
+        )
+
         guard Self.shouldAdoptHookWorkspace(current: session.cwd, incoming: incomingCwd) else {
+            if let transcriptProjectName {
+                session.projectName = transcriptProjectName
+            }
             return
         }
 
         let previousProjectName = session.projectName
         let previousCwd = session.cwd
         session.cwd = incomingCwd
-        session.projectName = Self.projectName(for: incomingCwd, fallback: session.provider.displayName)
+        session.projectName = transcriptProjectName
+            ?? Self.projectName(for: incomingCwd, fallback: session.provider.displayName)
         if session.sessionName == previousProjectName
             || session.sessionName == Self.projectName(for: previousCwd, fallback: previousProjectName) {
             session.sessionName = nil
@@ -902,6 +928,24 @@ actor SessionStore {
         session.conversationInfo = ConversationInfo(
             summary: session.conversationInfo.summary,
             lastMessage: session.conversationInfo.lastMessage,
+            lastMessageRole: "assistant",
+            lastToolName: session.conversationInfo.lastToolName,
+            firstUserMessage: session.conversationInfo.firstUserMessage,
+            lastUserMessageDate: session.conversationInfo.lastUserMessageDate
+        )
+    }
+
+    /// OpenCode's session.idle event means the assistant finished the current turn.
+    /// The managed plugin forwards the final assistant text, so preserve it as a
+    /// completed reply while leaving the reusable conversation in the idle phase.
+    private func processOpenCodeHookCompletion(event: HookEvent, session: inout SessionState) {
+        guard event.event == "Stop", event.status == "idle" else { return }
+        guard let assistantMessage = Self.normalizedHookMessage(event.message) else {
+            return
+        }
+        session.conversationInfo = ConversationInfo(
+            summary: session.conversationInfo.summary,
+            lastMessage: assistantMessage,
             lastMessageRole: "assistant",
             lastToolName: session.conversationInfo.lastToolName,
             firstUserMessage: session.conversationInfo.firstUserMessage,
@@ -2576,8 +2620,10 @@ actor SessionStore {
             .filter { $0.linkedParentSessionId == resolvedSessionId }
             .map(\.sessionId)
         sessions.removeValue(forKey: resolvedSessionId)
+        stopTranscriptWatcher(sessionId: resolvedSessionId)
         for childSessionId in linkedChildSessionIDs {
             sessions.removeValue(forKey: childSessionId)
+            stopTranscriptWatcher(sessionId: childSessionId)
         }
         clearCodexSessionAliases(for: resolvedSessionId)
         cancelPendingSync(sessionId: resolvedSessionId)
@@ -2604,6 +2650,7 @@ actor SessionStore {
         guard !cwd.isEmpty else { return }
         guard provider == .claude else { return }
         guard session.ingress != .nativeRuntime else { return }
+        guard session.ingress.usesLocalProcessNamespace else { return }
         // Qwen command hooks do not expose the owning CLI PID, while their stable
         // session IDs explicitly support multiple sessions in the same workspace.
         // Treating a second Qwen session as restart evidence would evict the first
@@ -2617,6 +2664,7 @@ actor SessionStore {
             guard existing.cwd == cwd else { continue }
             guard existing.phase != .ended else { continue }
             guard !existing.needsManualAttention else { continue }
+            guard existing.ingress.usesLocalProcessNamespace else { continue }
 
             // Don't archive a session that still has live execution evidence
             // (running tools or thinking in progress) — it may be a legitimate
@@ -2649,6 +2697,7 @@ actor SessionStore {
         for (sessionId, var session) in sessions {
             guard session.provider == .claude else { continue }
             guard session.ingress != .nativeRuntime else { continue }
+            guard session.ingress.usesLocalProcessNamespace else { continue }
             guard session.phase != .ended else { continue }
             guard !session.needsManualAttention else { continue }
 
@@ -2716,12 +2765,15 @@ actor SessionStore {
         for (sessionId, session) in Array(sessions) {
             let endedReap = session.phase == .ended
             let pidIsDead: Bool = {
-                guard let pid = session.pid, pid > 0 else { return false }
+                guard session.ingress.usesLocalProcessNamespace,
+                      let pid = session.pid,
+                      pid > 0 else { return false }
                 return Darwin.kill(pid_t(pid), 0) != 0 && errno == ESRCH
             }()
             guard endedReap || pidIsDead else { continue }
 
             sessions.removeValue(forKey: sessionId)
+            stopTranscriptWatcher(sessionId: sessionId)
             clearCodexSessionAliases(for: sessionId)
             cancelPendingSync(sessionId: sessionId)
             cancelPendingCodexPlaceholderPrune(sessionId: sessionId)
@@ -3227,7 +3279,8 @@ actor SessionStore {
     private func scheduleCodexRolloutSync(
         sessionId: String,
         clientInfo: SessionClientInfo,
-        cwd: String
+        cwd: String,
+        bypassParseThrottle: Bool = false
     ) {
         cancelPendingSync(sessionId: sessionId)
 
@@ -3236,20 +3289,28 @@ actor SessionStore {
             guard !Task.isCancelled else { return }
 
             let appServerSnapshot: CodexThreadSnapshot?
-            do {
-                appServerSnapshot = try await CodexAppServerMonitor.shared.readThread(
-                    threadId: sessionId,
-                    includeTurns: true
-                )
-            } catch {
+            if bypassParseThrottle {
+                // The file watcher has already proved that the local rollout changed.
+                // Parse it immediately instead of waiting on Ping Island's separate
+                // app-server process, which may not know about the active Codex task.
                 appServerSnapshot = nil
-                // Fall back to rollout parsing when the app-server is unavailable
-                // or the thread hasn't been materialized there yet.
+            } else {
+                do {
+                    appServerSnapshot = try await CodexAppServerMonitor.shared.readThread(
+                        threadId: sessionId,
+                        includeTurns: true
+                    )
+                } catch {
+                    appServerSnapshot = nil
+                    // Fall back to rollout parsing when the app-server is unavailable
+                    // or the thread hasn't been materialized there yet.
+                }
             }
 
             guard await self?.reserveCodexRolloutParseIfNeeded(
                 sessionId: sessionId,
-                hasAppServerSnapshot: appServerSnapshot != nil
+                hasAppServerSnapshot: appServerSnapshot != nil,
+                bypassParseThrottle: bypassParseThrottle
             ) == true else {
                 return
             }
@@ -3267,6 +3328,10 @@ actor SessionStore {
 
             if let appServerSnapshot,
                snapshot.intervention == nil,
+               !Self.shouldPreferCodexRolloutPhase(
+                   snapshot.phase,
+                   over: appServerSnapshot.phase
+               ),
                snapshot.historyItems.count <= appServerSnapshot.historyItems.count,
                snapshot.updatedAt <= appServerSnapshot.updatedAt {
                 return
@@ -3276,11 +3341,22 @@ actor SessionStore {
         }
     }
 
+    nonisolated static func shouldPreferCodexRolloutPhase(
+        _ rolloutPhase: SessionPhase,
+        over appServerPhase: SessionPhase
+    ) -> Bool {
+        rolloutPhase.isActive && !appServerPhase.isActive
+    }
+
     private func reserveCodexRolloutParseIfNeeded(
         sessionId: String,
-        hasAppServerSnapshot: Bool
+        hasAppServerSnapshot: Bool,
+        bypassParseThrottle: Bool
     ) -> Bool {
         guard !codexRolloutParsesInFlight.contains(sessionId) else {
+            if bypassParseThrottle {
+                deferredCodexRolloutSyncs.insert(sessionId)
+            }
             return false
         }
 
@@ -3289,7 +3365,8 @@ actor SessionStore {
             ? codexRolloutParseWithAppServerInterval
             : codexRolloutParseFallbackInterval
 
-        if let lastParseAt = lastCodexRolloutParseAt[sessionId],
+        if !bypassParseThrottle,
+           let lastParseAt = lastCodexRolloutParseAt[sessionId],
            now.timeIntervalSince(lastParseAt) < interval {
             return false
         }
@@ -3301,6 +3378,17 @@ actor SessionStore {
     private func finishCodexRolloutParse(sessionId: String) {
         codexRolloutParsesInFlight.remove(sessionId)
         lastCodexRolloutParseAt[sessionId] = Date()
+
+        guard deferredCodexRolloutSyncs.remove(sessionId) != nil,
+              let session = sessions[sessionId] else {
+            return
+        }
+        scheduleCodexRolloutSync(
+            sessionId: sessionId,
+            clientInfo: session.clientInfo,
+            cwd: session.cwd,
+            bypassParseThrottle: true
+        )
     }
 
     // MARK: - State Publishing
@@ -3368,7 +3456,42 @@ actor SessionStore {
         Array(sessions.values)
     }
 
-    func requestFileSync(for sessionId: String) {
+    func markRemoteSessionsDisconnected(
+        endpointID: UUID,
+        legacyRemoteHost: String?
+    ) {
+        let normalizedHost = legacyRemoteHost?
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+            .lowercased()
+            ?? ""
+
+        var changed = false
+        for (sessionID, var session) in sessions {
+            guard session.ingress == .remoteBridge else { continue }
+            let matchesEndpoint = session.clientInfo.remoteEndpointID == endpointID
+            let matchesLegacyHost = session.clientInfo.remoteEndpointID == nil
+                && !normalizedHost.isEmpty
+                && session.clientInfo.remoteHost?
+                    .trimmingCharacters(in: .whitespacesAndNewlines)
+                    .lowercased() == normalizedHost
+            guard (matchesEndpoint || matchesLegacyHost),
+                  session.connectionState != .disconnected else {
+                continue
+            }
+            session.connectionState = .disconnected
+            sessions[sessionID] = session
+            changed = true
+        }
+
+        if changed {
+            publishState()
+        }
+    }
+
+    func requestFileSync(
+        for sessionId: String,
+        forceCodexRolloutParse: Bool = false
+    ) {
         let resolvedSessionId = resolveCodexSessionAlias(sessionId)
         guard let session = sessions[resolvedSessionId] else { return }
         guard session.ingress != .remoteBridge else { return }
@@ -3377,7 +3500,8 @@ actor SessionStore {
             scheduleCodexRolloutSync(
                 sessionId: resolvedSessionId,
                 clientInfo: session.clientInfo,
-                cwd: session.cwd
+                cwd: session.cwd,
+                bypassParseThrottle: forceCodexRolloutParse
             )
             return
         }
@@ -3608,21 +3732,7 @@ actor SessionStore {
         sessions[resolvedSessionId] = session
         publishState()
         updateCodexPlaceholderPrune(for: session)
-
-        // Start file watcher for Codex sessions discovered via App Server
-        // (Hook-based sessions already get watchers via SessionMonitor.processHookEvent)
-        if session.phase == .processing || session.phase == .waitingForInput || session.phase.isWaitingForApproval {
-            let watcherSessionId = resolvedSessionId
-            let watcherCwd = session.cwd
-            let watcherFilePath = session.clientInfo.sessionFilePath
-            Task { @MainActor in
-                InterruptWatcherManager.shared.startWatching(
-                    sessionId: watcherSessionId,
-                    cwd: watcherCwd,
-                    explicitFilePath: watcherFilePath
-                )
-            }
-        }
+        startCodexRolloutWatcherIfAvailable(for: session)
     }
 
     func updateCodexThreadName(sessionId: String, name: String?) {
@@ -3791,32 +3901,44 @@ actor SessionStore {
         sessions[resolvedSessionId] = session
         publishState()
         updateCodexPlaceholderPrune(for: session)
-
-        // Start file watcher for Codex sessions discovered via App Server
-        if ingress != .hookBridge,
-           session.phase == .processing || session.phase == .waitingForInput || session.phase.isWaitingForApproval {
-            let watcherSessionId = resolvedSessionId
-            let watcherCwd = session.cwd
-            let watcherFilePath = session.clientInfo.sessionFilePath
-            Task { @MainActor in
-                InterruptWatcherManager.shared.startWatching(
-                    sessionId: watcherSessionId,
-                    cwd: watcherCwd,
-                    explicitFilePath: watcherFilePath
-                )
-            }
-        }
+        startCodexRolloutWatcherIfAvailable(for: session)
     }
 
     private func removeCodexAuxiliarySession(sessionId: String) {
         let resolvedSessionId = resolveCodexSessionAlias(sessionId)
         let existed = sessions.removeValue(forKey: resolvedSessionId) != nil
+        stopTranscriptWatcher(sessionId: resolvedSessionId)
         clearCodexSessionAliases(for: resolvedSessionId)
         cancelPendingSync(sessionId: resolvedSessionId)
         cancelPendingCodexPlaceholderPrune(sessionId: resolvedSessionId)
         lastCodexRolloutParseAt.removeValue(forKey: resolvedSessionId)
         if existed {
             publishState()
+        }
+    }
+
+    private func startCodexRolloutWatcherIfAvailable(for session: SessionState) {
+        guard session.provider == .codex,
+              session.ingress != .remoteBridge,
+              let filePath = session.clientInfo.sessionFilePath,
+              !filePath.isEmpty else {
+            return
+        }
+
+        let sessionId = session.sessionId
+        let cwd = session.cwd
+        Task { @MainActor in
+            InterruptWatcherManager.shared.startWatching(
+                sessionId: sessionId,
+                cwd: cwd,
+                explicitFilePath: filePath
+            )
+        }
+    }
+
+    private func stopTranscriptWatcher(sessionId: String) {
+        Task { @MainActor in
+            InterruptWatcherManager.shared.stopWatching(sessionId: sessionId)
         }
     }
 
@@ -3933,6 +4055,45 @@ actor SessionStore {
     private nonisolated static func projectName(for cwd: String, fallback: String) -> String {
         let name = URL(fileURLWithPath: cwd).lastPathComponent
         return name.isEmpty ? fallback : name
+    }
+
+    /// Claude stores transcripts under an encoded version of the session's original
+    /// project root. Hook `cwd` values can later move into a nested tool directory;
+    /// use the transcript directory to keep the visible project name stable.
+    private nonisolated static func claudeTranscriptProjectName(
+        cwd: String,
+        sessionFilePath: String?
+    ) -> String? {
+        guard let sessionFilePath else { return nil }
+
+        let pathComponents = URL(fileURLWithPath: sessionFilePath).pathComponents
+        guard let projectsIndex = pathComponents.indices.last(where: {
+            pathComponents[$0] == "projects"
+                && $0 > pathComponents.startIndex
+                && pathComponents[pathComponents.index(before: $0)] == ".claude"
+        }) else {
+            return nil
+        }
+
+        let encodedProjectIndex = pathComponents.index(after: projectsIndex)
+        guard encodedProjectIndex < pathComponents.endIndex else { return nil }
+        let encodedProjectPath = pathComponents[encodedProjectIndex]
+
+        var candidate = normalizedPath(cwd)
+        while !candidate.isEmpty, candidate != "/" {
+            let encodedCandidate = candidate
+                .replacingOccurrences(of: "/", with: "-")
+                .replacingOccurrences(of: ".", with: "-")
+            if encodedCandidate == encodedProjectPath {
+                return projectName(for: candidate, fallback: "")
+            }
+
+            let parent = URL(fileURLWithPath: candidate).deletingLastPathComponent().path
+            guard parent != candidate else { break }
+            candidate = parent
+        }
+
+        return nil
     }
 
     private nonisolated static func shouldAdoptHookWorkspace(current: String, incoming: String) -> Bool {
@@ -4914,6 +5075,7 @@ actor SessionStore {
             "Pruning stale Codex placeholder session=\(sessionId, privacy: .public) phase=\(session.phase.description, privacy: .public)"
         )
         sessions.removeValue(forKey: sessionId)
+        stopTranscriptWatcher(sessionId: sessionId)
         clearCodexSessionAliases(for: sessionId)
         cancelPendingSync(sessionId: sessionId)
         publishState()
@@ -4932,6 +5094,7 @@ actor SessionStore {
                 "Pruning expired Codex placeholder during publish session=\(sessionId, privacy: .public)"
             )
             sessions.removeValue(forKey: sessionId)
+            stopTranscriptWatcher(sessionId: sessionId)
             clearCodexSessionAliases(for: sessionId)
             cancelPendingSync(sessionId: sessionId)
             cancelPendingCodexPlaceholderPrune(sessionId: sessionId)

@@ -6,6 +6,26 @@ import XCTest
 
 @MainActor
 final class DetachedIslandWindowControllerTests: XCTestCase {
+    func testFloatingPetActiveCountUsesBlackInLightMode() throws {
+        let appearance = try XCTUnwrap(NSAppearance(named: .aqua))
+
+        XCTAssertFalse(DetachedFloatingPetAppearance.isDark(appearance))
+        XCTAssertEqual(
+            DetachedFloatingPetAppearance.activeCountColor(isDark: false),
+            .black
+        )
+    }
+
+    func testFloatingPetActiveCountUsesWhiteInDarkMode() throws {
+        let appearance = try XCTUnwrap(NSAppearance(named: .darkAqua))
+
+        XCTAssertTrue(DetachedFloatingPetAppearance.isDark(appearance))
+        XCTAssertEqual(
+            DetachedFloatingPetAppearance.activeCountColor(isDark: true),
+            .white
+        )
+    }
+
     func testDetachedHostingViewStaysTransparent() throws {
         let viewModel = makeViewModel()
         let sessionMonitor = makeSessionMonitor()
@@ -599,6 +619,17 @@ final class DetachedIslandWindowControllerTests: XCTestCase {
         )
     }
 
+    func testPinnedBubbleDoesNotOpenForCompletedSessionsOnly() {
+        let completed = makeSession(id: "completed", phase: .waitingForInput)
+
+        XCTAssertFalse(
+            DetachedIslandContentModel.canPresentBubble(
+                from: [completed],
+                mode: .pinnedList
+            )
+        )
+    }
+
     func testSessionListBubbleHeightScalesWithSessionCount() {
         let viewModel = makeViewModel()
         let single = [makeSession(id: "active-1", phase: .processing)]
@@ -623,6 +654,105 @@ final class DetachedIslandWindowControllerTests: XCTestCase {
 
         XCTAssertGreaterThan(manyHeight, singleHeight)
         XCTAssertLessThan(manyHeight, 520)
+    }
+
+    func testHoverDashboardBubbleHeightScalesBeyondThreeActiveSessions() {
+        let viewModel = makeViewModel()
+        let threeSessions = (1...3).map { index in
+            makeSession(id: "active-\(index)", phase: .processing)
+        }
+        let fourSessions = (1...4).map { index in
+            makeSession(id: "active-\(index)", phase: .processing)
+        }
+
+        let threeSessionHeight = DetachedIslandContentModel.bubbleContentSize(
+            for: .hoverDashboard,
+            sessions: threeSessions,
+            viewModel: viewModel
+        ).height
+        let fourSessionHeight = DetachedIslandContentModel.bubbleContentSize(
+            for: .hoverDashboard,
+            sessions: fourSessions,
+            viewModel: viewModel
+        ).height
+
+        XCTAssertGreaterThan(fourSessionHeight, threeSessionHeight)
+    }
+
+    func testHoverDashboardBubbleHeightCapsAtAvailableScreenHeight() {
+        let viewModel = makeViewModel(screenRect: CGRect(x: 0, y: 0, width: 1440, height: 900))
+        let manySessions = (1...20).map { index in
+            makeSession(id: "active-\(index)", phase: .processing)
+        }
+
+        let height = DetachedIslandContentModel.bubbleContentSize(
+            for: .hoverDashboard,
+            sessions: manySessions,
+            viewModel: viewModel
+        ).height
+
+        XCTAssertEqual(height, 740)
+    }
+
+    func testAirSizedFloatingListUsesConstrainedRowsBeforeScrolling() {
+        let viewModel = makeViewModel(screenRect: CGRect(x: 0, y: 0, width: 1470, height: 956))
+        let sessions = (1...11).map { index in
+            makeSession(id: "active-\(index)", phase: .processing)
+        }
+
+        XCTAssertEqual(
+            DetachedIslandContentModel.sessionListDensity(
+                for: sessions,
+                viewModel: viewModel,
+                additionalFooterHeight: DetachedIslandPanelMetrics.usageFooterReservedHeight
+            ),
+            .constrained
+        )
+
+        let height = DetachedIslandContentModel.bubbleContentSize(
+            for: .sessionList,
+            sessions: sessions,
+            viewModel: viewModel,
+            additionalFooterHeight: DetachedIslandPanelMetrics.usageFooterReservedHeight
+        ).height
+        XCTAssertLessThan(height, viewModel.screenRect.height - 160)
+    }
+
+    func testProSizedFloatingListKeepsRegularRowsWhenTheyFit() {
+        let viewModel = makeViewModel(screenRect: CGRect(x: 0, y: 0, width: 1920, height: 1080))
+        let sessions = (1...11).map { index in
+            makeSession(id: "active-\(index)", phase: .processing)
+        }
+
+        XCTAssertEqual(
+            DetachedIslandContentModel.sessionListDensity(
+                for: sessions,
+                viewModel: viewModel,
+                additionalFooterHeight: DetachedIslandPanelMetrics.usageFooterReservedHeight
+            ),
+            .regular
+        )
+    }
+
+    func testAirSizedHoverDashboardCondensesRowsBeforeScrolling() {
+        let airViewModel = makeViewModel(screenRect: CGRect(x: 0, y: 0, width: 1470, height: 956))
+        let proViewModel = makeViewModel(screenRect: CGRect(x: 0, y: 0, width: 1920, height: 1080))
+        let sessions = (1...9).map { index in
+            makeSession(id: "active-\(index)", phase: .processing)
+        }
+
+        XCTAssertTrue(
+            DetachedIslandContentModel.hoverDashboardUsesCondensedRows(
+                for: sessions,
+                viewModel: airViewModel
+            )
+        )
+        XCTAssertFalse(
+            DetachedIslandContentModel.hoverDashboardUsesCondensedRows(
+                for: sessions,
+                viewModel: proViewModel
+            )
+        )
     }
 
     func testSessionListBubbleTreatsEndedSessionsAsMoreCompactRows() {
@@ -907,7 +1037,7 @@ final class DetachedIslandWindowControllerTests: XCTestCase {
         wait(for: [bubblePresented], timeout: 1.0)
     }
 
-    func testCodexCompletionBubbleDoesNotAutoOpenWhileClaudeSessionIsActive() {
+    func testCodexCompletionBubbleAutoOpensWhileClaudeSessionIsActive() {
         let originalAutoOpenCompletionPanel = AppSettings.autoOpenCompletionPanel
         AppSettings.autoOpenCompletionPanel = true
         defer { AppSettings.autoOpenCompletionPanel = originalAutoOpenCompletionPanel }
@@ -935,35 +1065,26 @@ final class DetachedIslandWindowControllerTests: XCTestCase {
         controller.present(atPetAnchor: CGPoint(x: 1200, y: 220))
         controller.applySessionSnapshotForTesting([activeClaude, codexCompleted])
 
-        let suppressed = expectation(description: "codex completion stays suppressed by active claude")
+        let presented = expectation(description: "codex completion opens while claude remains active")
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) {
-            XCTAssertNil(controller.currentActiveCompletionNotificationForTesting)
-            XCTAssertEqual(controller.renderedBubbleStateForTesting, .hidden)
-            XCTAssertFalse(controller.isBubbleVisibleForTesting)
-            suppressed.fulfill()
+            guard let notification = controller.currentActiveCompletionNotificationForTesting else {
+                XCTFail("Expected codex completion notification")
+                presented.fulfill()
+                return
+            }
+
+            XCTAssertEqual(notification.session.stableId, codexCompleted.stableId)
+            XCTAssertEqual(notification.kind, .completed)
+            XCTAssertEqual(controller.renderedBubbleStateForTesting, .hoverPreview)
+            XCTAssertTrue(controller.isBubbleVisibleForTesting)
+            XCTAssertEqual(controller.currentExpandedRoute, .completionNotification(notification))
+            presented.fulfill()
         }
 
-        wait(for: [suppressed], timeout: 1.0)
-
-        controller.applySessionSnapshotForTesting([
-            makeCodexCompletedSession(id: sessionId, phase: .processing, lastActivity: activityAt)
-        ])
-        controller.applySessionSnapshotForTesting([
-            makeCodexCompletedSession(id: sessionId, lastActivity: activityAt)
-        ])
-
-        let notReopened = expectation(description: "suppressed codex completion does not reopen later")
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) {
-            XCTAssertNil(controller.currentActiveCompletionNotificationForTesting)
-            XCTAssertEqual(controller.renderedBubbleStateForTesting, .hidden)
-            XCTAssertFalse(controller.isBubbleVisibleForTesting)
-            notReopened.fulfill()
-        }
-
-        wait(for: [notReopened], timeout: 1.0)
+        wait(for: [presented], timeout: 1.0)
     }
 
-    func testCodexCompletionBubbleDoesNotAutoOpenWhileAnotherCodexSessionIsActive() {
+    func testCodexCompletionBubbleAutoOpensWhileAnotherCodexSessionIsActive() {
         let originalAutoOpenCompletionPanel = AppSettings.autoOpenCompletionPanel
         AppSettings.autoOpenCompletionPanel = true
         defer { AppSettings.autoOpenCompletionPanel = originalAutoOpenCompletionPanel }
@@ -999,15 +1120,23 @@ final class DetachedIslandWindowControllerTests: XCTestCase {
         controller.present(atPetAnchor: CGPoint(x: 1200, y: 220))
         controller.applySessionSnapshotForTesting([activeCodex, codexCompleted])
 
-        let suppressed = expectation(description: "codex completion stays suppressed by active codex")
+        let presented = expectation(description: "codex completion opens while another codex remains active")
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) {
-            XCTAssertNil(controller.currentActiveCompletionNotificationForTesting)
-            XCTAssertEqual(controller.renderedBubbleStateForTesting, .hidden)
-            XCTAssertFalse(controller.isBubbleVisibleForTesting)
-            suppressed.fulfill()
+            guard let notification = controller.currentActiveCompletionNotificationForTesting else {
+                XCTFail("Expected codex completion notification")
+                presented.fulfill()
+                return
+            }
+
+            XCTAssertEqual(notification.session.stableId, codexCompleted.stableId)
+            XCTAssertEqual(notification.kind, .completed)
+            XCTAssertEqual(controller.renderedBubbleStateForTesting, .hoverPreview)
+            XCTAssertTrue(controller.isBubbleVisibleForTesting)
+            XCTAssertEqual(controller.currentExpandedRoute, .completionNotification(notification))
+            presented.fulfill()
         }
 
-        wait(for: [suppressed], timeout: 1.0)
+        wait(for: [presented], timeout: 1.0)
     }
 
     func testDismissedCodexCompletionDoesNotReopenAfterThreadRefresh() {

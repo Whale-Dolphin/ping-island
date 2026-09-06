@@ -257,6 +257,67 @@ func opencodeQuestionRequestCreatesQuestionIntervention() throws {
 }
 
 @Test
+func opencodeIdleStopMapsToIdleInsteadOfCompletedOrWaiting() throws {
+    let payload = """
+    {
+      "hook_event_name": "Stop",
+      "session_id": "opencode-idle",
+      "status": "idle",
+      "last_assistant_message": "已经完成。"
+    }
+    """.data(using: .utf8)!
+
+    let envelope = HookPayloadMapper.makeEnvelope(
+        source: .claude,
+        arguments: [
+            "island-bridge",
+            "--source", "claude",
+            "--client-kind", "opencode",
+            "--client-name", "OpenCode",
+            "--thread-source", "opencode-plugin"
+        ],
+        environment: ["PWD": "/tmp/demo"],
+        stdinData: payload
+    )
+
+    #expect(envelope.eventType == "Stop")
+    #expect(envelope.status?.kind == .idle)
+    #expect(envelope.expectsResponse == false)
+    #expect(envelope.intervention == nil)
+    #expect(envelope.preview == "已经完成。")
+}
+
+@Test
+func legacyOpenCodeStopWithoutStatusMapsToIdle() throws {
+    let payload = """
+    {
+      "hook_event_name": "Stop",
+      "session_id": "opencode-legacy-stop",
+      "last_assistant_message": "旧插件也已经完成。"
+    }
+    """.data(using: .utf8)!
+
+    let envelope = HookPayloadMapper.makeEnvelope(
+        source: .claude,
+        arguments: [
+            "island-bridge",
+            "--source", "claude",
+            "--client-kind", "opencode",
+            "--client-name", "OpenCode",
+            "--thread-source", "opencode-plugin"
+        ],
+        environment: ["PWD": "/tmp/demo"],
+        stdinData: payload
+    )
+
+    #expect(envelope.eventType == "Stop")
+    #expect(envelope.status?.kind == .idle)
+    #expect(envelope.expectsResponse == false)
+    #expect(envelope.intervention == nil)
+    #expect(envelope.preview == "旧插件也已经完成。")
+}
+
+@Test
 func opencodeBridgePayloadEnvironmentOverridesTerminalContext() throws {
     let payload = """
     {
@@ -612,6 +673,66 @@ func codexPermissionPayloadUsesLatestHookSpecificOutput() throws {
     #expect(hookSpecificOutput["hookEventName"] as? String == "PermissionRequest")
     let decision = try #require(hookSpecificOutput["decision"] as? [String: Any])
     #expect(decision["behavior"] as? String == "allow")
+}
+
+@Test
+func codexPermissionRequestForwardsAutomaticReviewerFromMatchingTurn() async throws {
+    try await withTemporaryDirectory { directory in
+        let transcriptURL = directory.appending(path: "rollout.jsonl")
+        try """
+        {"type":"turn_context","payload":{"turn_id":"older-turn","approvals_reviewer":"guardian_subagent"}}
+        {"type":"turn_context","payload":{"turn_id":"current-turn","approvals_reviewer":"auto_review"}}
+        """.write(to: transcriptURL, atomically: true, encoding: .utf8)
+        let payload = """
+        {
+          "hook_event_name": "PermissionRequest",
+          "session_id": "codex-auto-review",
+          "turn_id": "current-turn",
+          "transcript_path": "\(transcriptURL.path())",
+          "permission_mode": "default",
+          "tool_name": "Bash"
+        }
+        """.data(using: .utf8)!
+
+        let envelope = HookPayloadMapper.makeEnvelope(
+            source: .codex,
+            arguments: ["island-bridge", "--source", "codex"],
+            environment: ["PWD": directory.path()],
+            stdinData: payload
+        )
+
+        #expect(envelope.metadata["approvals_reviewer"] == "auto_review")
+    }
+}
+
+@Test
+func codexPermissionRequestDoesNotBorrowReviewerFromAnotherTurn() async throws {
+    try await withTemporaryDirectory { directory in
+        let transcriptURL = directory.appending(path: "rollout.jsonl")
+        try """
+        {"type":"turn_context","payload":{"turn_id":"manual-turn","approvals_reviewer":"guardian_subagent"}}
+        {"type":"turn_context","payload":{"turn_id":"other-turn","approvals_reviewer":"auto_review"}}
+        """.write(to: transcriptURL, atomically: true, encoding: .utf8)
+        let payload = """
+        {
+          "hook_event_name": "PermissionRequest",
+          "session_id": "codex-manual-review",
+          "turn_id": "manual-turn",
+          "transcript_path": "\(transcriptURL.path())",
+          "permission_mode": "default",
+          "tool_name": "Bash"
+        }
+        """.data(using: .utf8)!
+
+        let envelope = HookPayloadMapper.makeEnvelope(
+            source: .codex,
+            arguments: ["island-bridge", "--source", "codex"],
+            environment: ["PWD": directory.path()],
+            stdinData: payload
+        )
+
+        #expect(envelope.metadata["approvals_reviewer"] == "guardian_subagent")
+    }
 }
 
 @Test

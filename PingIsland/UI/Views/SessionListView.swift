@@ -10,9 +10,16 @@ import Carbon.HIToolbox
 import Combine
 import SwiftUI
 
+enum SessionListDensity: Equatable {
+    case regular
+    case constrained
+}
+
 struct SessionListView: View {
+    let sessions: [SessionState]
     @ObservedObject var sessionMonitor: SessionMonitor
     @ObservedObject var viewModel: NotchViewModel
+    var density: SessionListDensity = .regular
     var enableKeyboardNavigation = true
     var highlightedSessionStableID: String? = nil
     @State private var expandedSessionStableID: String?
@@ -22,7 +29,7 @@ struct SessionListView: View {
 
     var body: some View {
         Group {
-            if sessionMonitor.instances.isEmpty {
+            if sessions.isEmpty {
                 emptyState
             } else {
                 instancesList
@@ -90,7 +97,7 @@ struct SessionListView: View {
     // MARK: - Instances List
 
     private var sortedInstances: [SessionState] {
-        sessionMonitor.instances
+        sessions
     }
 
     private var sessionGroups: [PrimarySessionGroup] {
@@ -119,6 +126,7 @@ struct SessionListView: View {
                         isSelected: selectedSessionStableID == group.session.stableId,
                         isHighlighted: highlightedSessionStableID == group.session.stableId,
                         isYabaiAvailable: isYabaiAvailable,
+                        density: density,
                         onSelect: { selectSession(group.session) },
                         onActivate: { activateSession(group.session) },
                         onToggleExpanded: { toggleExpanded(group.session) },
@@ -140,6 +148,7 @@ struct SessionListView: View {
                                     session: childSession,
                                     isSelected: selectedSessionStableID == childSession.stableId,
                                     isHighlighted: highlightedSessionStableID == childSession.stableId,
+                                    density: density,
                                     onSelect: { selectSession(childSession) },
                                     onActivate: { activateSession(childSession) },
                                     onChat: { openChat(childSession) }
@@ -461,6 +470,7 @@ private struct SubagentAttachmentRow: View {
     let session: SessionState
     let isSelected: Bool
     let isHighlighted: Bool
+    let density: SessionListDensity
     let onSelect: () -> Void
     let onActivate: () -> Void
     let onChat: () -> Void
@@ -493,6 +503,9 @@ private struct SubagentAttachmentRow: View {
     }
 
     private var detail: String? {
+        if session.connectionState == .disconnected {
+            return AppLocalization.string("远程连接已断开")
+        }
         if let latestTool = latestToolCall {
             let preview = latestTool.inputPreview.trimmingCharacters(in: .whitespacesAndNewlines)
             if !preview.isEmpty {
@@ -563,7 +576,7 @@ private struct SubagentAttachmentRow: View {
                     .lineLimit(1)
                     .truncationMode(.tail)
 
-                if let detail {
+                if let detail, density == .regular || needsInAppResponse {
                     HStack(alignment: .firstTextBaseline, spacing: 4) {
                         Text("└")
                             .font(.system(size: 11, weight: .medium, design: .monospaced))
@@ -597,7 +610,7 @@ private struct SubagentAttachmentRow: View {
         }
         .padding(.leading, 9)
         .padding(.trailing, 12)
-        .padding(.vertical, 6)
+        .padding(.vertical, density == .constrained ? 3 : 6)
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(
             RoundedRectangle(cornerRadius: 10, style: .continuous)
@@ -661,6 +674,7 @@ struct InstanceRow: View {
     let isSelected: Bool
     let isHighlighted: Bool
     let isYabaiAvailable: Bool
+    let density: SessionListDensity
     let onSelect: () -> Void
     let onActivate: () -> Void
     let onToggleExpanded: () -> Void
@@ -734,7 +748,13 @@ struct InstanceRow: View {
     }
 
     private var usesSingleLineCompactLayout: Bool {
-        isCollapsedCompactPresentation || isCodexSubagentCompactPresentation
+        isCollapsedCompactPresentation
+            || isCodexSubagentCompactPresentation
+            || usesConstrainedCompactPresentation
+    }
+
+    private var usesConstrainedCompactPresentation: Bool {
+        density == .constrained && !needsInAppResponse && !isExpanded
     }
 
     private var isCollapsedCompactPresentation: Bool {
@@ -941,19 +961,28 @@ struct InstanceRow: View {
 
     @ViewBuilder
     private var avatarStatusBadge: some View {
-        switch session.phase {
-        case .processing, .compacting, .waitingForApproval:
-            animatedStatusBadge
-        case .waitingForInput:
-            Circle()
-                .fill(statusAccentColor)
-                .frame(width: 10, height: 10)
-                .overlay(
-                    Circle()
-                        .strokeBorder(Color.black.opacity(0.8), lineWidth: 2)
-                )
-        case .idle, .ended:
-            EmptyView()
+        if session.connectionState == .disconnected {
+            Image(systemName: "wifi.slash")
+                .font(.system(size: 7, weight: .bold))
+                .foregroundColor(Color.white.opacity(0.56))
+                .frame(width: 14, height: 14)
+                .background(Color.black.opacity(0.92))
+                .clipShape(Circle())
+        } else {
+            switch session.phase {
+            case .processing, .compacting, .waitingForApproval:
+                animatedStatusBadge
+            case .waitingForInput:
+                Circle()
+                    .fill(statusAccentColor)
+                    .frame(width: 10, height: 10)
+                    .overlay(
+                        Circle()
+                            .strokeBorder(Color.black.opacity(0.8), lineWidth: 2)
+                    )
+            case .idle, .ended:
+                EmptyView()
+            }
         }
     }
 
@@ -1107,7 +1136,7 @@ struct InstanceRow: View {
         if isWaitingForApproval {
             return TerminalColors.amber.opacity(isHovered ? 0.15 : 0.09)
         }
-        if session.phase.isActive {
+        if session.isExecutionActive {
             return Color.white.opacity(isHovered ? 0.08 : 0.04)
         }
         return isHovered ? Color.white.opacity(0.06) : Color.clear
@@ -1152,6 +1181,7 @@ struct InstanceRow: View {
 
     private var shouldShowExpandedDetails: Bool {
         guard !usesCodexSubagentTitleOnlyPresentation else { return false }
+        guard !usesConstrainedCompactPresentation else { return false }
         return !isMinimalCompactPresentation || isExpanded
     }
 
@@ -1228,7 +1258,7 @@ struct InstanceRow: View {
     private var shouldReserveIncomingPreviewLineHeight: Bool {
         guard detailsEnabled else { return false }
         guard shouldShowExpandedDetails else { return false }
-        guard session.phase.isActive else { return false }
+        guard session.isExecutionActive else { return false }
         guard latestUserLine == nil else { return false }
         return previewLines.count == 1
     }
@@ -1296,7 +1326,7 @@ struct InstanceRow: View {
     }
 
     private var assistantPrefixColor: Color {
-        providerColor.opacity(session.phase.isActive ? 0.96 : 0.92)
+        providerColor.opacity(session.isExecutionActive ? 0.96 : 0.92)
     }
 
     private var assistantTextColor: Color {
@@ -1306,7 +1336,7 @@ struct InstanceRow: View {
         if isWaitingForApproval {
             return .white.opacity(0.74)
         }
-        if session.phase.isActive {
+        if session.isExecutionActive {
             return .white.opacity(0.66)
         }
         return .white.opacity(0.52)
@@ -1491,6 +1521,9 @@ struct InstanceRow: View {
     }
 
     private var compactDetailSummary: String? {
+        if session.connectionState == .disconnected {
+            return AppLocalization.string("远程连接已断开")
+        }
         switch session.phase {
         case .processing:
             return session.codexSubagentSummaryText(for: session.isNativeRuntimeSession

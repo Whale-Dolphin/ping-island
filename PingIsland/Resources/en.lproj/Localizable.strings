@@ -323,6 +323,7 @@
 "上下文已压缩" = "Context compressed";
 "等待你的下一条消息" = "Waiting for your next message";
 "会话已结束" = "Session ended";
+"远程连接已断开" = "Remote connection lost";
 "Deny" = "Deny";
 "Allow" = "Allow";
 "Allow Once" = "Allow Once";
@@ -438,6 +439,9 @@
 "正在建立远程转发通道…" = "Establishing remote forwarding channel…";
 "远程转发已连接" = "Remote forwarding connected";
 "远程转发已断开" = "Remote forwarding disconnected";
+"远程转发已断开，%.0f 秒后自动重连…" = "Remote forwarding disconnected; reconnecting automatically in %.0f seconds…";
+"正在自动重连远程转发…" = "Reconnecting remote forwarding automatically…";
+"远程自动重连失败" = "Automatic remote reconnection failed";
 "远程 bridge 已卸载" = "Remote bridge uninstalled";
 "远程卸载失败" = "Remote uninstall failed";
 "本地 PingIslandBridge 二进制不存在，无法安装到远程主机" = "Local PingIslandBridge binary is missing, so the remote host cannot be bootstrapped";

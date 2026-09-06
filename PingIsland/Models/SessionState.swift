@@ -31,6 +31,11 @@ enum SessionScopedApprovalAction: Equatable, Sendable {
     }
 }
 
+enum SessionConnectionState: String, Codable, Equatable, Sendable {
+    case connected
+    case disconnected
+}
+
 /// Complete state for a single tracked session
 /// This is the single source of truth - all state reads and writes go through SessionStore
 struct SessionState: Equatable, Identifiable, Sendable {
@@ -48,6 +53,7 @@ struct SessionState: Equatable, Identifiable, Sendable {
     var provider: SessionProvider
     var clientInfo: SessionClientInfo
     var ingress: SessionIngress
+    var connectionState: SessionConnectionState
     var sessionName: String?
     var previewText: String?
     var latestHookMessage: String?
@@ -121,6 +127,7 @@ struct SessionState: Equatable, Identifiable, Sendable {
         provider: SessionProvider = .claude,
         clientInfo: SessionClientInfo? = nil,
         ingress: SessionIngress = .hookBridge,
+        connectionState: SessionConnectionState = .connected,
         sessionName: String? = nil,
         previewText: String? = nil,
         latestHookMessage: String? = nil,
@@ -157,6 +164,7 @@ struct SessionState: Equatable, Identifiable, Sendable {
         self.provider = provider
         self.clientInfo = clientInfo ?? SessionClientInfo.default(for: provider)
         self.ingress = ingress
+        self.connectionState = connectionState
         self.sessionName = sessionName
         self.previewText = previewText
         self.latestHookMessage = latestHookMessage
@@ -189,18 +197,28 @@ struct SessionState: Equatable, Identifiable, Sendable {
 
     /// Whether this session needs user attention
     nonisolated var needsAttention: Bool {
-        phase.needsAttention || intervention != nil
+        needsApprovalResponse || needsQuestionResponse
     }
 
     /// Whether this session should be surfaced before active/background work.
     nonisolated var needsManualAttention: Bool {
-        needsAttention
+        connectionState == .connected && needsAttention
+    }
+
+    nonisolated var isExecutionActive: Bool {
+        connectionState == .connected && phase.isActive
+    }
+
+    nonisolated var contributesToProcessingSoundEdge: Bool {
+        connectionState == .connected && phase.contributesToProcessingSoundEdge
     }
 
     /// Whether this session should surface an attention notification for a prompt
     /// even when the prompt response itself must stay in the terminal/client.
     nonisolated var needsPromptNotification: Bool {
-        needsApprovalResponse || needsQuestionResponse || suppressInAppPromptControls
+        connectionState == .connected && (
+            needsApprovalResponse || needsQuestionResponse || suppressInAppPromptControls
+        )
     }
 
     /// The active permission context, if any
@@ -971,17 +989,18 @@ struct SessionState: Equatable, Identifiable, Sendable {
 
     /// Whether the session can be interacted with
     nonisolated var canInteract: Bool {
-        phase.needsAttention || intervention != nil
+        needsManualAttention
     }
 
     /// Whether the session is waiting on a question-like intervention
     nonisolated var needsQuestionResponse: Bool {
-        intervention?.kind == .question
+        connectionState == .connected && intervention?.kind == .question
     }
 
     /// Whether the session is waiting on an approval-like decision.
     nonisolated var needsApprovalResponse: Bool {
-        phase.isWaitingForApproval || intervention?.kind == .approval
+        connectionState == .connected
+            && (phase.isWaitingForApproval || intervention?.kind == .approval)
     }
 
     /// Whether Island has a concrete response target for the active approval.
@@ -1118,7 +1137,7 @@ struct SessionState: Equatable, Identifiable, Sendable {
         if let permission = activePermission {
             return permission.receivedAt
         }
-        if needsAttention {
+        if needsManualAttention {
             return lastActivity
         }
         return nil
@@ -1129,7 +1148,7 @@ struct SessionState: Equatable, Identifiable, Sendable {
     /// backfilled transcript timestamp from the first parsed user message cannot
     /// make the row jump backward during an in-flight update.
     nonisolated var queueSortActivityDate: Date {
-        if phase.isActive {
+        if isExecutionActive {
             return lastActivity
         }
         return lastUserMessageDate ?? lastActivity
@@ -1158,7 +1177,7 @@ struct SessionState: Equatable, Identifiable, Sendable {
         if phase == .ended, shouldShowArchiveActionInPrimaryUI {
             return false
         }
-        if phase.isActive || needsManualAttention {
+        if isExecutionActive || needsManualAttention {
             return false
         }
         return Date().timeIntervalSince(lastActivity) >= Self.minimalCompactDelay
@@ -1166,6 +1185,9 @@ struct SessionState: Equatable, Identifiable, Sendable {
 
     /// Whether the session list should offer a manual archive action for this row.
     nonisolated var shouldShowArchiveActionInPrimaryUI: Bool {
+        if connectionState == .disconnected {
+            return true
+        }
         switch phase {
         case .idle:
             return true
@@ -1179,8 +1201,8 @@ struct SessionState: Equatable, Identifiable, Sendable {
     }
 
     nonisolated func shouldSortBeforeInQueue(_ other: SessionState) -> Bool {
-        if phase.isActive != other.phase.isActive {
-            return phase.isActive
+        if isExecutionActive != other.isExecutionActive {
+            return isExecutionActive
         }
 
         if needsManualAttention != other.needsManualAttention {

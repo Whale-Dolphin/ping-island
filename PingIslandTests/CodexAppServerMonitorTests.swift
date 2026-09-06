@@ -69,6 +69,40 @@ final class CodexAppServerMonitorTests: XCTestCase {
         XCTAssertEqual(intervention.metadata["source"], "guardian_review")
     }
 
+    func testAutoApprovalReviewDoesNotSurfaceAsUserPrompt() {
+        XCTAssertFalse(CodexAppServerMonitor.shouldSurfaceAutoApprovalReview(
+            approvalsReviewer: "auto_review"
+        ))
+        XCTAssertFalse(CodexAppServerMonitor.shouldSurfaceAutoApprovalReview(
+            approvalsReviewer: " AUTO-REVIEW "
+        ))
+        XCTAssertTrue(CodexAppServerMonitor.shouldSurfaceAutoApprovalReview(
+            approvalsReviewer: "user"
+        ))
+        XCTAssertTrue(CodexAppServerMonitor.shouldSurfaceAutoApprovalReview(
+            approvalsReviewer: nil
+        ))
+    }
+
+    func testApprovalSettingsReadCurrentCodexHeartbeatShape() {
+        let settings = CodexAppServerMonitor.approvalSettings(
+            from: [
+                "electron-persisted-atom-state": [
+                    "heartbeat-thread-permissions-by-id": [
+                        "thread-1": [
+                            "approvalPolicy": "on-request",
+                            "approvalsReviewer": "auto_review"
+                        ]
+                    ]
+                ]
+            ],
+            threadId: "thread-1"
+        )
+
+        XCTAssertEqual(settings.approvalPolicy, "on-request")
+        XCTAssertEqual(settings.approvalsReviewer, "auto_review")
+    }
+
     func testCodexUserInputQuestionsDefaultToCustomInput() {
         let questions = CodexAppServerMonitor.parseQuestions([
             [

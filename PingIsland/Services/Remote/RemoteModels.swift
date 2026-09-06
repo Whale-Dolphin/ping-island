@@ -372,6 +372,8 @@ struct RemoteHookEventPayload: Codable, Sendable {
     let event: String
     let status: String
     let provider: String
+    let permissionMode: String?
+    let approvalsReviewer: String?
     let pid: Int?
     let tty: String?
     let tool: String?
@@ -400,6 +402,11 @@ struct RemoteDecisionMessage: Encodable, Sendable {
     let decision: String
     let reason: String?
     let updatedInput: [String: RemoteJSONValue]?
+}
+
+struct RemoteAcknowledgementMessage: Encodable, Sendable {
+    let type: String = "ack"
+    let requestID: UUID
 }
 
 enum RemoteJSONValue: Codable, Equatable, Sendable {
