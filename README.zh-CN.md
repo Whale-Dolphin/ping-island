@@ -2,6 +2,9 @@
   <img src="docs/images/ping-island-icon.svg" width="64" height="64" alt="Ping Island 应用图标" valign="middle">&nbsp;
   Ping Island
 </h1>
+
+> 本 fork 的 `personal/session-monitor-fixes` 分支基于上游 v0.27.0，包含会话状态、远程事件传输、完成通知和小屏幕布局等修复。修改范围、构建方式及验证限制见 [fork 说明](docs/fork-notes.md)。下方原项目的下载链接不包含本分支的改动。
+
 <p align="center">
   <b>macOS 菜单栏里的灵动岛风格 AI 编码会话监视器</b><br>
   <a href="https://erha19.github.io/">官网</a> •

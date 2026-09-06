@@ -180,6 +180,11 @@ This file is a routing layer for coding agents working in this repo. Keep it sho
 
 ## Current Reality
 
+- This fork's `personal/session-monitor-fixes` branch is based on upstream v0.27.0. Read `docs/fork-notes.md` for its changed behavior and verification limits.
+- On this branch, floating hover and pinned lists select connected active sessions and explicit attention requests; the docked list retains the broader existing visibility policy. Keep this distinction when applying the general lifecycle rules above.
+- Use `SessionState.isExecutionActive` and `needsManualAttention` in UI/activity decisions so disconnected remote sessions and completed turns do not appear as ongoing work or pending approval. Inspect remote PIDs only in their own process namespace.
+- Remote events remain in a bounded on-disk outbox until the Mac acknowledges them. This is replay support, not a global exactly-once or multiple-Mac broadcast protocol. The completion notification registry remains in memory.
+- Linux bridge resolution supports `~/.ping-island/custom-bridges/` before the existing release cache/download path. Publishing source to the fork does not deploy a Linux binary or change the upstream release URL.
 - The main shipping target is the Xcode project, not the Swift package under `Prototype/`.
 - The root project now includes `PingIslandTests` and `PingIslandUITests` targets for app-level state and settings-window coverage.
 - `Prototype/Tests` remains the fastest place for logic-level unit tests plus process/socket e2e coverage.

@@ -2,6 +2,9 @@
   <img src="docs/images/ping-island-icon.svg" width="64" height="64" alt="Ping Island app icon" valign="middle">&nbsp;
   Ping Island
 </h1>
+
+> This fork's `personal/session-monitor-fixes` branch contains changes based on upstream v0.27.0 for session tracking, remote delivery, completion notifications, and smaller-screen layouts. See [fork changes, build instructions, and verification limits](docs/fork-notes.md). The upstream download links below do not contain these changes.
+
 <p align="center">
   <b>AI coding session monitor for the macOS menu bar</b><br>
   <a href="https://erha19.github.io/">Website</a> •
