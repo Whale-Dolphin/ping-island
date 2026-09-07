@@ -60,6 +60,16 @@ enum DetachedIslandPanelMetrics {
     }
 }
 
+enum DetachedFloatingPetAppearance {
+    static func isDark(_ appearance: NSAppearance) -> Bool {
+        appearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua
+    }
+
+    static func activeCountColor(isDark: Bool) -> Color {
+        isDark ? .white : .black
+    }
+}
+
 enum DetachedIslandBubblePlacement: CaseIterable, Equatable {
     case topLeft
     case topRight
@@ -109,13 +119,14 @@ enum DetachedIslandBubbleContentMode: Equatable {
     }
 }
 
-struct DetachedIslandWindowLayout {
+struct DetachedIslandWindowLayout: Equatable {
     let containerSize: CGSize
     let petFrame: CGRect
     let bubbleFrame: CGRect?
     let bubblePlacement: DetachedIslandBubblePlacement
     let petAnchorInWindow: CGPoint
     let bubbleContentMode: DetachedIslandBubbleContentMode?
+    var maximumBubbleContentSize: CGSize? = nil
 }
 
 enum DetachedIslandContentModel {
@@ -126,11 +137,6 @@ enum DetachedIslandContentModel {
         preferredPlacement: DetachedIslandBubblePlacement = .topLeft,
         petMetrics: DetachedIslandPetMetrics = .standard
     ) -> DetachedIslandBubblePlacement {
-        let petSize = CGSize(
-            width: petMetrics.petHitFrame,
-            height: petMetrics.petHitFrame
-        )
-
         var fallbackPlacement = preferredPlacement
         var fallbackVisibleArea: CGFloat = -.greatestFiniteMagnitude
 
@@ -138,7 +144,7 @@ enum DetachedIslandContentModel {
             let bubbleFrame = bubbleScreenFrame(
                 for: placement,
                 petScreenAnchor: petScreenAnchor,
-                petSize: petSize,
+                petMetrics: petMetrics,
                 bubbleSize: bubbleSize
             )
 
@@ -156,6 +162,32 @@ enum DetachedIslandContentModel {
         return fallbackPlacement
     }
 
+    static func availableBubbleContentSize(
+        for placement: DetachedIslandBubblePlacement,
+        petScreenAnchor: CGPoint,
+        availableFrame: CGRect,
+        petMetrics: DetachedIslandPetMetrics = .standard
+    ) -> CGSize {
+        let bounds = availableFrame.insetBy(
+            dx: DetachedIslandPanelMetrics.bubbleWindowGutter,
+            dy: DetachedIslandPanelMetrics.bubbleWindowGutter
+        )
+        let halfPet = petMetrics.petHitFrame / 2
+        let gap = DetachedIslandPanelMetrics.bubbleGap
+        let width = placement.isBubbleLeftOfPet
+            ? petScreenAnchor.x - halfPet - DetachedIslandPanelMetrics.leftBubbleGap - bounds.minX
+            : bounds.maxX - (petScreenAnchor.x + halfPet + gap)
+        // Match the current scaled pet/bubble overlap, not the old above/below
+        // approximation. The pet's screen anchor stays fixed while content grows.
+        let attachmentY = placement.isBubbleAbovePet
+            ? petScreenAnchor.y + halfPet + gap - (placement == .topLeft ? petMetrics.petVisualFrame : 0)
+            : petScreenAnchor.y - halfPet - gap + petMetrics.petVisualFrame
+        let height = placement.isBubbleAbovePet
+            ? bounds.maxY - attachmentY
+            : attachmentY - bounds.minY
+        return CGSize(width: max(0, width), height: max(0, height))
+    }
+
     static func sortedSessions(from sessions: [SessionState]) -> [SessionState] {
         IslandExpandedRouteResolver.orderedSessions(from: sessions)
     }
@@ -166,7 +198,7 @@ enum DetachedIslandContentModel {
     }
 
     static func activeCount(from sessions: [SessionState]) -> Int {
-        sessions.filter { $0.phase.isActive }.count
+        sessions.filter(\.isExecutionActive).count
     }
 
     static func canPresentBubble(
@@ -182,7 +214,7 @@ enum DetachedIslandContentModel {
             return IslandExpandedRouteResolver.highestPriorityAttentionSession(from: sessions) != nil
                 || !IslandExpandedRouteResolver.activePreviewSessions(from: sessions).isEmpty
         case .pinnedList:
-            return !sortedSessions(from: sessions).isEmpty
+            return !IslandExpandedRouteResolver.activePreviewSessions(from: sessions).isEmpty
         }
     }
 
@@ -215,40 +247,43 @@ enum DetachedIslandContentModel {
         viewModel: NotchViewModel,
         measuredAttentionBubbleHeight: CGFloat? = nil,
         measuredCompletionBubbleHeight: CGFloat? = nil,
-        additionalFooterHeight: CGFloat = 0
+        additionalFooterHeight: CGFloat = 0,
+        maximumSize: CGSize? = nil
     ) -> CGSize {
-        let widthLimit = viewModel.screenRect.width - 132
+        let widthLimit = max(0, min(viewModel.screenRect.width - 132, maximumSize?.width ?? .greatestFiniteMagnitude))
+        let heightLimit = maximumBubbleContentHeight(for: viewModel, availableHeight: maximumSize?.height)
 
         switch route {
         case .sessionList:
             let width = min(widthLimit, 448)
-            let sorted = sortedSessions(from: sessions)
-            let estimatedHeight = sessionListEstimatedHeight(for: sorted)
+            let selected = IslandExpandedRouteResolver.activePreviewSessions(from: sessions)
+            let density = sessionListDensity(
+                for: selected,
+                viewModel: viewModel,
+                additionalFooterHeight: additionalFooterHeight,
+                maximumContentHeight: heightLimit
+            )
+            let estimatedHeight = sessionListEstimatedHeight(for: selected, density: density)
             let height = min(
-                viewModel.screenRect.height - 160,
+                heightLimit,
                 max(96, estimatedHeight + additionalFooterHeight)
             )
             return CGSize(width: width, height: height)
         case .hoverDashboard:
             let width = min(widthLimit, 392)
-            let visibleCount = max(min(IslandExpandedRouteResolver.activePreviewSessions(from: sessions).count, 3), 1)
-            let estimatedHeight = 18 + (CGFloat(visibleCount) * 94)
-            let height = min(viewModel.screenRect.height - 160, max(120, estimatedHeight))
+            let count = max(IslandExpandedRouteResolver.activePreviewSessions(from: sessions).count, 1)
+            let rowHeight: CGFloat = hoverDashboardUsesCondensedRows(
+                for: sessions,
+                viewModel: viewModel,
+                maximumContentHeight: heightLimit
+            ) ? 48 : 94
+            let estimatedHeight = 18 + (CGFloat(count) * rowHeight)
+            let height = min(heightLimit, max(120, estimatedHeight))
             return CGSize(width: width, height: height)
         case .attentionNotification(let session):
             let width = min(widthLimit, 392)
-            let height: CGFloat
-            if let measuredAttentionBubbleHeight {
-                height = min(
-                    viewModel.screenRect.height - 160,
-                    max(170, measuredAttentionBubbleHeight)
-                )
-            } else if session.needsQuestionResponse {
-                height = min(viewModel.screenRect.height - 160, 316)
-            } else {
-                height = min(viewModel.screenRect.height - 160, 228)
-            }
-            return CGSize(width: width, height: max(170, height))
+            let height = measuredAttentionBubbleHeight ?? (session.needsQuestionResponse ? 316 : 228)
+            return CGSize(width: width, height: min(heightLimit, max(170, height)))
         case .completionNotification:
             let width = min(widthLimit, 392)
             let height = measuredCompletionBubbleHeight
@@ -256,37 +291,77 @@ enum DetachedIslandContentModel {
             return CGSize(
                 width: width,
                 height: min(
-                    viewModel.screenRect.height - 160,
+                    heightLimit,
                     max(DetachedIslandPanelMetrics.completionBubbleMinimumHeight, height)
                 )
             )
         case .chat:
-            return viewModel.panelSize(for: .detached)
+            let size = viewModel.panelSize(for: .detached)
+            return CGSize(width: min(widthLimit, size.width), height: min(heightLimit, size.height))
         }
     }
 
-    private static func sessionListEstimatedHeight(for sessions: [SessionState]) -> CGFloat {
-        guard !sessions.isEmpty else { return 96 }
+    @MainActor
+    static func sessionListDensity(
+        for sessions: [SessionState],
+        viewModel: NotchViewModel,
+        additionalFooterHeight: CGFloat = 0,
+        maximumContentHeight: CGFloat? = nil
+    ) -> SessionListDensity {
+        let selected = IslandExpandedRouteResolver.activePreviewSessions(from: sessions)
+        let regularHeight = sessionListEstimatedHeight(for: selected, density: .regular)
+            + additionalFooterHeight
+        return regularHeight <= maximumBubbleContentHeight(for: viewModel, availableHeight: maximumContentHeight)
+            ? .regular : .constrained
+    }
 
+    @MainActor
+    static func hoverDashboardUsesCondensedRows(
+        for sessions: [SessionState],
+        viewModel: NotchViewModel,
+        maximumContentHeight: CGFloat? = nil
+    ) -> Bool {
+        let count = max(IslandExpandedRouteResolver.activePreviewSessions(from: sessions).count, 1)
+        return 18 + (CGFloat(count) * 94) > maximumBubbleContentHeight(
+            for: viewModel, availableHeight: maximumContentHeight
+        )
+    }
+
+    @MainActor
+    static func maximumBubbleContentHeight(for viewModel: NotchViewModel, availableHeight: CGFloat? = nil) -> CGFloat {
+        let screenLimit = max(96, viewModel.screenRect.height - 160)
+        return max(0, min(screenLimit, availableHeight ?? screenLimit))
+    }
+
+    private static func sessionListEstimatedHeight(
+        for sessions: [SessionState],
+        density: SessionListDensity
+    ) -> CGFloat {
+        guard !sessions.isEmpty else { return 96 }
         let contentHeight = sessions.reduce(CGFloat(0)) { partial, session in
-            partial + sessionListRowHeight(for: session)
+            partial + sessionListRowHeight(for: session, density: density)
         }
         let spacing = CGFloat(max(0, sessions.count - 1)) * 2
-        let verticalInsets: CGFloat = 8
-        return contentHeight + spacing + verticalInsets
+        return contentHeight + spacing + 8
     }
 
-    private static func sessionListRowHeight(for session: SessionState) -> CGFloat {
-        if session.needsQuestionResponse || session.needsApprovalResponse || session.needsManualAttention {
+    private static func sessionListRowHeight(
+        for session: SessionState,
+        density: SessionListDensity
+    ) -> CGFloat {
+        // Preserve both in-app controls and terminal-routed prompt details.
+        if session.needsManualAttention || session.needsPromptNotification {
             return 86
         }
-        if session.phase.isActive {
+        if density == .constrained {
+            return session.shouldUseMinimalCompactPresentation || session.usesTitleOnlySubagentPresentation
+                ? 40 : 52
+        }
+        if session.isExecutionActive {
             return 74
         }
-        if session.shouldUseMinimalCompactPresentation || session.usesTitleOnlySubagentPresentation {
-            return 46
-        }
-        return 56
+        return session.shouldUseMinimalCompactPresentation || session.usesTitleOnlySubagentPresentation
+            ? 46 : 56
     }
 
     static func contentWidth(
@@ -312,9 +387,10 @@ enum DetachedIslandContentModel {
         activeCompletionNotification: SessionCompletionNotification? = nil,
         guideBubbleSize: CGSize? = nil,
         petScreenAnchor: CGPoint? = nil,
-        availableFrame: CGRect? = nil
+        availableFrame: CGRect? = nil,
+        petMetrics: DetachedIslandPetMetrics? = nil
     ) -> DetachedIslandWindowLayout {
-        let petMetrics = DetachedIslandPanelMetrics.petMetrics()
+        let petMetrics = petMetrics ?? DetachedIslandPanelMetrics.petMetrics()
         let petSize = CGSize(
             width: petMetrics.petHitFrame,
             height: petMetrics.petHitFrame
@@ -355,7 +431,7 @@ enum DetachedIslandContentModel {
             mode: mode,
             activeCompletionNotification: activeCompletionNotification
         )
-        let bubbleSize = bubbleContentSize(
+        let preferredSize = bubbleContentSize(
             for: route,
             sessions: sessions,
             viewModel: viewModel,
@@ -363,14 +439,39 @@ enum DetachedIslandContentModel {
             measuredCompletionBubbleHeight: measuredCompletionBubbleHeight,
             additionalFooterHeight: additionalFooterHeight
         )
+        let resolvedPlacement: DetachedIslandBubblePlacement
+        let maximumSize: CGSize?
+        if let petScreenAnchor, let availableFrame {
+            resolvedPlacement = preferredBubblePlacement(
+                for: petScreenAnchor, bubbleSize: preferredSize, availableFrame: availableFrame,
+                preferredPlacement: bubblePlacement, petMetrics: petMetrics
+            )
+            maximumSize = availableBubbleContentSize(
+                for: resolvedPlacement, petScreenAnchor: petScreenAnchor,
+                availableFrame: availableFrame, petMetrics: petMetrics
+            )
+        } else {
+            resolvedPlacement = bubblePlacement
+            maximumSize = nil
+        }
+        let bubbleSize = bubbleContentSize(
+            for: route,
+            sessions: sessions,
+            viewModel: viewModel,
+            measuredAttentionBubbleHeight: measuredAttentionBubbleHeight,
+            measuredCompletionBubbleHeight: measuredCompletionBubbleHeight,
+            additionalFooterHeight: additionalFooterHeight,
+            maximumSize: maximumSize
+        )
         return bubbleLayout(
             petSize: petSize,
             bubbleSize: bubbleSize,
-            bubblePlacement: bubblePlacement,
+            bubblePlacement: resolvedPlacement,
             bubbleContentMode: mode,
-            petScreenAnchor: petScreenAnchor,
-            availableFrame: availableFrame,
-            petMetrics: petMetrics
+            petScreenAnchor: nil,
+            availableFrame: nil,
+            petMetrics: petMetrics,
+            maximumBubbleContentSize: maximumSize
         )
     }
 
@@ -381,7 +482,8 @@ enum DetachedIslandContentModel {
         bubbleContentMode: DetachedIslandBubbleContentMode?,
         petScreenAnchor: CGPoint?,
         availableFrame: CGRect?,
-        petMetrics: DetachedIslandPetMetrics
+        petMetrics: DetachedIslandPetMetrics,
+        maximumBubbleContentSize: CGSize? = nil
     ) -> DetachedIslandWindowLayout {
         let resolvedPlacement: DetachedIslandBubblePlacement
         if let petScreenAnchor, let availableFrame {
@@ -456,34 +558,35 @@ enum DetachedIslandContentModel {
             bubbleFrame: bubbleFrame,
             bubblePlacement: resolvedPlacement,
             petAnchorInWindow: CGPoint(x: petFrame.midX, y: petFrame.midY),
-            bubbleContentMode: bubbleContentMode
+            bubbleContentMode: bubbleContentMode,
+            maximumBubbleContentSize: maximumBubbleContentSize
         )
     }
 
-    private static func bubbleScreenFrame(
+    static func bubbleScreenFrame(
         for placement: DetachedIslandBubblePlacement,
         petScreenAnchor: CGPoint,
-        petSize: CGSize,
+        petMetrics: DetachedIslandPetMetrics = .standard,
         bubbleSize: CGSize
     ) -> CGRect {
-        let petFrame = CGRect(
-            x: petScreenAnchor.x - (petSize.width / 2),
-            y: petScreenAnchor.y - (petSize.height / 2),
-            width: petSize.width,
-            height: petSize.height
+        // Use the actual top-origin layout and AppKit anchor conversion so
+        // placement selection includes main's scaled visual-overlap offsets.
+        let layout = bubbleLayout(
+            petSize: CGSize(width: petMetrics.petHitFrame, height: petMetrics.petHitFrame),
+            bubbleSize: bubbleSize,
+            bubblePlacement: placement,
+            bubbleContentMode: nil,
+            petScreenAnchor: nil,
+            availableFrame: nil,
+            petMetrics: petMetrics
         )
-        let horizontalGap = placement.isBubbleLeftOfPet
-            ? DetachedIslandPanelMetrics.leftBubbleGap
-            : DetachedIslandPanelMetrics.bubbleGap
-        let verticalGap = DetachedIslandPanelMetrics.bubbleGap
-        let originX = placement.isBubbleLeftOfPet
-            ? petFrame.minX - horizontalGap - bubbleSize.width
-            : petFrame.maxX + horizontalGap
-        let originY = placement.isBubbleAbovePet
-            ? petFrame.maxY + verticalGap
-            : petFrame.minY - verticalGap - bubbleSize.height
-
-        return CGRect(origin: CGPoint(x: originX, y: originY), size: bubbleSize)
+        guard let bubble = layout.bubbleFrame else { return .zero }
+        return CGRect(
+            x: petScreenAnchor.x - layout.petAnchorInWindow.x + bubble.minX,
+            y: petScreenAnchor.y + layout.petAnchorInWindow.y - bubble.maxY,
+            width: bubble.width,
+            height: bubble.height
+        )
     }
 
     private static func visibleArea(of rect: CGRect, within bounds: CGRect) -> CGFloat {
@@ -577,6 +680,7 @@ final class DetachedIslandBubbleViewState: ObservableObject {
     @Published private(set) var isBubbleVisible = false
     @Published private(set) var measuredAttentionBubbleHeight: CGFloat?
     @Published private(set) var measuredCompletionBubbleHeight: CGFloat?
+    @Published private(set) var windowLayout: DetachedIslandWindowLayout?
 
     var bubbleFadeDuration: TimeInterval { 0.18 }
 
@@ -610,6 +714,11 @@ final class DetachedIslandBubbleViewState: ObservableObject {
     func setActiveCompletionNotification(_ notification: SessionCompletionNotification?) {
         guard activeCompletionNotification != notification else { return }
         activeCompletionNotification = notification
+    }
+
+    func setWindowLayout(_ layout: DetachedIslandWindowLayout) {
+        guard windowLayout != layout else { return }
+        windowLayout = layout
     }
 }
 
@@ -657,8 +766,21 @@ struct DetachedIslandPanelView: View {
         )
     }
 
+    private var sessionListDensity: SessionListDensity {
+        DetachedIslandContentModel.sessionListDensity(
+            for: sortedSessions,
+            viewModel: viewModel,
+            additionalFooterHeight: shouldShowFloatingUsageFooter
+                ? DetachedIslandPanelMetrics.usageFooterReservedHeight : 0,
+            maximumContentHeight: layout.maximumBubbleContentSize?.height
+        )
+    }
+
     private var layout: DetachedIslandWindowLayout {
-        DetachedIslandContentModel.layout(
+        // Render the same placement/budget that sized the AppKit window. Rebuilding
+        // here without its screen anchor would restore the whole-screen height.
+        if let windowLayout = bubbleViewState.windowLayout { return windowLayout }
+        return DetachedIslandContentModel.layout(
             for: sortedSessions,
             viewModel: viewModel,
             bubbleState: bubbleViewState.renderedBubbleState,
@@ -712,11 +834,10 @@ struct DetachedIslandPanelView: View {
         if isPetDragging {
             return .dragging
         }
-        return MascotStatus.closedNotchStatus(
-            representativePhase: representativeSession?.phase,
-            hasPendingPermission: sortedSessions.contains { $0.needsApprovalResponse },
-            hasHumanIntervention: sortedSessions.contains { $0.intervention != nil }
-        )
+        if let session = IslandDetachedContentResolver.preferredSession(from: sortedSessions) {
+            return MascotStatus(session: session)
+        }
+        return .idle
     }
 
     var body: some View {
@@ -842,6 +963,8 @@ struct DetachedIslandPanelView: View {
                         ? bubbleViewState.highlightedSessionStableID
                         : nil,
                     contentWidthOverride: contentWidth,
+                    sessionListDensity: sessionListDensity,
+                    maximumContentHeight: layout.maximumBubbleContentSize?.height,
                     onAttentionActionCompleted: onAttentionActionCompleted,
                     onCompletionNotificationHoverChanged: onCompletionNotificationHoverChanged,
                     onDismissCompletionNotification: onDismissCompletionNotification
@@ -910,6 +1033,11 @@ private struct DetachedFloatingPetInteractionView: View {
     let onDragStarted: () -> Void
     let onDragChanged: (CGSize) -> Void
     let onDragEnded: () -> Void
+    // The bubble intentionally stays dark, but the count sits on the desktop.
+    // Observe the system appearance rather than its forced-dark SwiftUI parent.
+    @State private var isDarkSystemAppearance = DetachedFloatingPetAppearance.isDark(
+        NSApplication.shared.effectiveAppearance
+    )
 
     var body: some View {
         DetachedFloatingMascotView(
@@ -966,13 +1094,16 @@ private struct DetachedFloatingPetInteractionView: View {
                 height: petMetrics.petHitFrame
             )
         }
+        .onReceive(NSApplication.shared.publisher(for: \.effectiveAppearance)) { appearance in
+            isDarkSystemAppearance = DetachedFloatingPetAppearance.isDark(appearance)
+        }
     }
 
     @ViewBuilder
     private var activeCountBadge: some View {
         PixelNumberView(
             value: activeCount,
-            color: .white.opacity(0.96),
+            color: DetachedFloatingPetAppearance.activeCountColor(isDark: isDarkSystemAppearance),
             fontSize: petMetrics.activeCountFontSize(for: activeCount),
             weight: .semibold,
             tracking: activeCount >= 10 ? -0.15 : -0.05

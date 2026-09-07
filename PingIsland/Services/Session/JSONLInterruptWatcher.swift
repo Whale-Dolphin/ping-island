@@ -2,8 +2,8 @@
 //  JSONLInterruptWatcher.swift
 //  PingIsland
 //
-//  Watches JSONL files for interrupt patterns in real-time
-//  Uses file system events to detect interrupts faster than hook polling
+//  Watches JSONL files for transcript changes and interrupts in real-time
+//  Uses file system events to refresh sessions without waiting for polling
 //
 
 import Foundation
@@ -14,7 +14,7 @@ private let logger = Logger(subsystem: "com.wudanwu.pingisland", category: "Inte
 
 protocol JSONLInterruptWatcherDelegate: AnyObject {
     func didDetectInterrupt(sessionId: String)
-    func didObserveFileChange(sessionId: String)
+    func didObserveFileChange(sessionId: String, requiresImmediateSync: Bool)
 }
 
 /// Watches a session's JSONL file for interrupt patterns in real-time
@@ -27,9 +27,10 @@ class JSONLInterruptWatcher {
     private var source: DispatchSourceFileSystemObject?
     private var retryWorkItem: DispatchWorkItem?
     private var lastOffset: UInt64 = 0
+    private var pendingLineFragment = Data()
+    private var hasAttached = false
     private var retryAttempt = 0
     private var loggedMissingFile = false
-    private var waitingForFile = false
     private let sessionId: String
     private let filePath: String
     private let queue = DispatchQueue(label: "com.wudanwu.pingisland.interruptwatcher", qos: .userInteractive)
@@ -54,31 +55,35 @@ class JSONLInterruptWatcher {
         }
     }
 
-    static func resolveFallbackFilePath(sessionId: String, cwd: String) -> String {
+    static func resolveFallbackFilePath(
+        sessionId: String,
+        cwd: String,
+        homeDirectory: URL = FileManager.default.homeDirectoryForCurrentUser
+    ) -> String {
         let projectDir = cwd.replacingOccurrences(of: "/", with: "-")
             .replacingOccurrences(of: ".", with: "-")
 
-        let qoderPath = NSHomeDirectory() + "/.qoder/projects/" + projectDir + "/transcript/" + sessionId + ".jsonl"
+        let qoderPath = homeDirectory.path + "/.qoder/projects/" + projectDir + "/transcript/" + sessionId + ".jsonl"
         if FileManager.default.fileExists(atPath: qoderPath) {
             return qoderPath
         }
 
-        let qoderWorkPath = NSHomeDirectory() + "/.qoderwork/projects/" + projectDir + "/" + sessionId + ".jsonl"
+        let qoderWorkPath = homeDirectory.path + "/.qoderwork/projects/" + projectDir + "/" + sessionId + ".jsonl"
         if FileManager.default.fileExists(atPath: qoderWorkPath) {
             return qoderWorkPath
         }
 
-        if let codexPath = resolveCodexRolloutPath(sessionId: sessionId) {
+        if let codexPath = resolveCodexRolloutPath(
+            sessionId: sessionId,
+            sessionsRoot: homeDirectory.appendingPathComponent(".codex/sessions", isDirectory: true)
+        ) {
             return codexPath
         }
 
-        return NSHomeDirectory() + "/.claude/projects/" + projectDir + "/" + sessionId + ".jsonl"
+        return homeDirectory.path + "/.claude/projects/" + projectDir + "/" + sessionId + ".jsonl"
     }
 
-    private static func resolveCodexRolloutPath(sessionId: String) -> String? {
-        let sessionsRoot = FileManager.default.homeDirectoryForCurrentUser
-            .appendingPathComponent(".codex")
-            .appendingPathComponent("sessions", isDirectory: true)
+    private static func resolveCodexRolloutPath(sessionId: String, sessionsRoot: URL) -> String? {
 
         guard let enumerator = FileManager.default.enumerator(
             at: sessionsRoot,
@@ -114,21 +119,19 @@ class JSONLInterruptWatcher {
                 logger.debug("Waiting for transcript file: \(self.filePath, privacy: .public)")
                 loggedMissingFile = true
             }
-            waitingForFile = true
             scheduleRetry()
             return
         }
 
         guard let handle = FileHandle(forReadingAtPath: filePath) else {
             logger.warning("Failed to open transcript file: \(self.filePath, privacy: .public)")
-            waitingForFile = true
             scheduleRetry()
             return
         }
 
         fileHandle = handle
-        let needsInitialSync = waitingForFile
-        waitingForFile = false
+        let needsInitialSync = !hasAttached
+        pendingLineFragment.removeAll(keepingCapacity: true)
         retryAttempt = 0
         if loggedMissingFile {
             logger.debug("Attached transcript watcher after file became available: \(self.sessionId.prefix(8), privacy: .public)...")
@@ -156,12 +159,12 @@ class JSONLInterruptWatcher {
             self?.checkForInterrupt()
         }
 
-        newSource.setCancelHandler { [weak self] in
-            try? self?.fileHandle?.close()
-            self?.fileHandle = nil
+        newSource.setCancelHandler {
+            try? handle.close()
         }
 
         source = newSource
+        hasAttached = true
         newSource.resume()
 
         logger.debug("Started watching: \(self.sessionId.prefix(8), privacy: .public)...")
@@ -169,7 +172,7 @@ class JSONLInterruptWatcher {
         if needsInitialSync {
             DispatchQueue.main.async { [weak self] in
                 guard let self = self else { return }
-                self.delegate?.didObserveFileChange(sessionId: self.sessionId)
+                self.delegate?.didObserveFileChange(sessionId: self.sessionId, requiresImmediateSync: true)
             }
         }
     }
@@ -184,6 +187,10 @@ class JSONLInterruptWatcher {
             return
         }
 
+        if currentSize < lastOffset {
+            lastOffset = 0
+            pendingLineFragment.removeAll(keepingCapacity: true)
+        }
         guard currentSize > lastOffset else { return }
 
         do {
@@ -192,19 +199,18 @@ class JSONLInterruptWatcher {
             return
         }
 
-        guard let newData = try? handle.readToEnd(),
-              let newContent = String(data: newData, encoding: .utf8) else {
-            return
-        }
-
-        lastOffset = currentSize
+        guard let newData = try? handle.readToEnd(), !newData.isEmpty else { return }
+        lastOffset += UInt64(newData.count)
+        let lines = completedLines(from: newData)
+        let requiresImmediateSync = Self.requiresImmediateSessionSync(in: lines)
 
         DispatchQueue.main.async { [weak self] in
             guard let self = self else { return }
-            self.delegate?.didObserveFileChange(sessionId: self.sessionId)
+            self.delegate?.didObserveFileChange(
+                sessionId: self.sessionId,
+                requiresImmediateSync: requiresImmediateSync
+            )
         }
-
-        let lines = newContent.components(separatedBy: "\n")
         for line in lines where !line.isEmpty {
             if isInterruptLine(line) {
                 logger.info("Detected interrupt in session: \(self.sessionId.prefix(8), privacy: .public)")
@@ -215,6 +221,43 @@ class JSONLInterruptWatcher {
                 return
             }
         }
+    }
+
+    /// Keep bytes until a newline, including UTF-8 scalars split across writes.
+    func completedLines(from data: Data) -> [String] {
+        pendingLineFragment.append(data)
+        guard let newline = pendingLineFragment.lastIndex(of: 0x0A) else { return [] }
+        let end = pendingLineFragment.index(after: newline)
+        let complete = pendingLineFragment[..<end]
+        let lines = complete.split(separator: 0x0A).compactMap { String(data: $0, encoding: .utf8) }
+        pendingLineFragment = Data(pendingLineFragment[end...])
+        return lines
+    }
+
+    private static let immediateLifecycleEvents: Set<String> = [
+        "task_started", "task_complete", "turn_aborted", "context_compacted"
+    ]
+    private static let immediateInteractionItems: Set<String> = [
+        "function_call", "function_call_output"
+    ]
+
+    static func requiresImmediateSessionSync(in content: String) -> Bool {
+        requiresImmediateSessionSync(in: content.components(separatedBy: "\n"))
+    }
+
+    private static func requiresImmediateSessionSync(in lines: [String]) -> Bool {
+        for line in lines {
+            guard immediateLifecycleEvents.contains(where: { line.contains("\"\($0)\"") })
+                || immediateInteractionItems.contains(where: { line.contains("\"\($0)\"") }) else { continue }
+            guard let data = line.data(using: .utf8),
+                  let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+                  let type = object["type"] as? String,
+                  let payload = object["payload"] as? [String: Any],
+                  let payloadType = payload["type"] as? String else { continue }
+            if type == "event_msg", immediateLifecycleEvents.contains(payloadType) { return true }
+            if type == "response_item", immediateInteractionItems.contains(payloadType) { return true }
+        }
+        return false
     }
 
     private func isInterruptLine(_ line: String) -> Bool {

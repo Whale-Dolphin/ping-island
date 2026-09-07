@@ -25,6 +25,7 @@ enum SameWorkspaceSessionSupersession {
     nonisolated static func workspaceKey(for session: SessionState) -> String? {
         guard session.provider == .claude else { return nil }
         guard session.ingress != .nativeRuntime else { return nil }
+        guard session.ingress.usesLocalProcessNamespace else { return nil }
         // Qwen command hooks do not expose the owning CLI PID, while their stable
         // session IDs explicitly support several sessions per workspace, so a Qwen
         // session neither supersedes a sibling nor gets superseded by one.

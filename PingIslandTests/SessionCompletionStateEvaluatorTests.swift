@@ -33,7 +33,7 @@ final class SessionCompletionStateEvaluatorTests: XCTestCase {
 
     @MainActor
     func testCompletionNotificationRegistryUsesSharedCompletionKeyLogic() {
-        let registry = SessionCompletionNotificationRegistry.shared
+        let registry = SessionCompletionNotificationRegistry()
         var session = SessionState(
             sessionId: "codex-notification-key",
             cwd: "/tmp/project",
@@ -131,6 +131,7 @@ final class SessionCompletionStateEvaluatorTests: XCTestCase {
 
         XCTAssertFalse(SessionCompletionStateEvaluator.hasCompletedAssistantReply(for: session))
         XCTAssertFalse(SessionCompletionStateEvaluator.isCompletedReadySession(session))
+        XCTAssertNil(SessionCompletionKey.make(for: session))
     }
 
     func testCompletedReadySessionRequiresWaitingForInputAssistantReply() {
@@ -191,6 +192,60 @@ final class SessionCompletionStateEvaluatorTests: XCTestCase {
 
         XCTAssertTrue(SessionCompletionStateEvaluator.hasCompletedAssistantReply(for: session))
         XCTAssertTrue(SessionCompletionStateEvaluator.isCompletedReadySession(session))
+    }
+
+    func testOpenCodeIdleCompletionUsesLifecycleEdgeNotMetadataRefresh() {
+        let now = Date(timeIntervalSince1970: 100)
+        var session = SessionState(
+            sessionId: "opencode-idle",
+            cwd: "/synthetic/workspaces/project",
+            clientInfo: SessionClientInfo(
+                kind: .custom, profileID: "opencode", name: "OpenCode",
+                origin: "cli", originator: "OpenCode", threadSource: "opencode-plugin"
+            ),
+            phase: .idle,
+            chatItems: [ChatHistoryItem(id: "assistant", type: .assistant("Done"), timestamp: now)],
+            lastActivity: now,
+            createdAt: now.addingTimeInterval(-10)
+        )
+        XCTAssertTrue(SessionCompletionStateEvaluator.isCompletedReadySession(session))
+        XCTAssertTrue(SessionCompletionNotificationPolicy.shouldQueueCompletedNotification(
+            for: session, previousPhase: .processing, isEnabled: true, now: now
+        ))
+        XCTAssertFalse(SessionCompletionNotificationPolicy.shouldQueueCompletedNotification(
+            for: session, previousPhase: .idle, isEnabled: true, now: now
+        ))
+        session.chatItems.removeAll()
+        XCTAssertFalse(SessionCompletionStateEvaluator.isCompletedReadySession(session))
+        XCTAssertNil(SessionCompletionKey.make(for: session))
+    }
+
+    func testCompletionWithoutAssistantEvidenceDoesNotCaptureAnEarlyKey() {
+        let now = Date(timeIntervalSince1970: 100)
+        let session = SessionState(
+            sessionId: "assistantless-tracked", cwd: "/synthetic/workspaces/project",
+            phase: .waitingForInput, lastActivity: now, createdAt: now.addingTimeInterval(-10)
+        )
+        XCTAssertNil(SessionCompletionKey.make(for: session))
+        XCTAssertFalse(SessionCompletionNotificationPolicy.shouldQueueCompletedNotification(
+            for: session, previousPhase: .processing, isEnabled: true, now: now
+        ))
+        XCTAssertFalse(SessionCompletionNotificationPolicy.shouldQueueCompletedNotification(
+            for: session, previousPhase: nil, isEnabled: true, now: now
+        ))
+    }
+
+    func testDisconnectedOrTerminalRoutedPromptIsNotCompletedReady() {
+        var session = SessionState(
+            sessionId: "remote-prompt", cwd: "/synthetic/workspaces/project",
+            phase: .waitingForInput,
+            chatItems: [ChatHistoryItem(id: "assistant", type: .assistant("Done"), timestamp: Date())]
+        )
+        session.connectionState = .disconnected
+        XCTAssertFalse(SessionCompletionStateEvaluator.isCompletedReadySession(session))
+        session.connectionState = .connected
+        session.suppressInAppPromptControls = true
+        XCTAssertFalse(SessionCompletionStateEvaluator.isCompletedReadySession(session))
     }
 
     func testNonCodexIdleAssistantReplyIsNotCompletedReadySession() {
@@ -540,7 +595,7 @@ final class SessionCompletionStateEvaluatorTests: XCTestCase {
                 in: [codex, activeClaude]
             )
         )
-        XCTAssertTrue(
+        XCTAssertFalse(
             SessionCompletionNotificationPolicy.hasBlockingActiveSession(
                 for: codex,
                 in: [codex, waitingClaude]

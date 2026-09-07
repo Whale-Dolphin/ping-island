@@ -10,9 +10,17 @@ import Carbon.HIToolbox
 import Combine
 import SwiftUI
 
+enum SessionListDensity: Equatable {
+    case regular
+    case constrained
+}
+
 struct SessionListView: View {
+    let sessions: [SessionState]
     @ObservedObject var sessionMonitor: SessionMonitor
     @ObservedObject var viewModel: NotchViewModel
+    var density: SessionListDensity = .regular
+    var constrainsHeight = false
     var enableKeyboardNavigation = true
     var highlightedSessionStableID: String? = nil
     @State private var expandedSessionStableID: String?
@@ -22,7 +30,7 @@ struct SessionListView: View {
 
     var body: some View {
         Group {
-            if sessionMonitor.instances.isEmpty {
+            if sessions.isEmpty {
                 emptyState
             } else {
                 instancesList
@@ -90,7 +98,7 @@ struct SessionListView: View {
     // MARK: - Instances List
 
     private var sortedInstances: [SessionState] {
-        sessionMonitor.instances
+        sessions
     }
 
     private var sessionGroups: [PrimarySessionGroup] {
@@ -106,7 +114,7 @@ struct SessionListView: View {
     }
 
     private var shouldUseScrollContainer: Bool {
-        displayedInstances.count > 3 || expandedSessionStableID != nil
+        constrainsHeight || displayedInstances.count > 3 || expandedSessionStableID != nil
     }
 
     private var listContent: some View {
@@ -119,6 +127,7 @@ struct SessionListView: View {
                         isSelected: selectedSessionStableID == group.session.stableId,
                         isHighlighted: highlightedSessionStableID == group.session.stableId,
                         isYabaiAvailable: isYabaiAvailable,
+                        density: density,
                         onSelect: { selectSession(group.session) },
                         onActivate: { activateSession(group.session) },
                         onToggleExpanded: { toggleExpanded(group.session) },
@@ -140,6 +149,7 @@ struct SessionListView: View {
                                     session: childSession,
                                     isSelected: selectedSessionStableID == childSession.stableId,
                                     isHighlighted: highlightedSessionStableID == childSession.stableId,
+                                    density: density,
                                     onSelect: { selectSession(childSession) },
                                     onActivate: { activateSession(childSession) },
                                     onChat: { openChat(childSession) }
@@ -314,7 +324,9 @@ struct SessionListView: View {
         guard case .instances = viewModel.contentType else { return false }
         guard NSApp.keyWindow is NotchPanel else { return false }
 
-        let sessions = displayedInstances
+        // The NSEvent monitor retains its original View value. Resolve rows from
+        // the live reference, not the immutable rendering snapshot it captured.
+        let sessions = SessionListKeyboardNavigation.sessions(from: sessionMonitor)
         guard !sessions.isEmpty else { return false }
 
         switch event.keyCode {
@@ -333,23 +345,15 @@ struct SessionListView: View {
     }
 
     private func moveSelection(delta: Int, in sessions: [SessionState]) {
-        guard !sessions.isEmpty else { return }
-
-        let currentIndex: Int
-        if let selectedSessionStableID,
-           let existingIndex = sessions.firstIndex(where: { $0.stableId == selectedSessionStableID }) {
-            currentIndex = existingIndex
-        } else {
-            currentIndex = delta > 0 ? -1 : sessions.count
-        }
-
-        let targetIndex = min(max(currentIndex + delta, 0), sessions.count - 1)
-        selectedSessionStableID = sessions[targetIndex].stableId
+        selectedSessionStableID = SessionListKeyboardNavigation.movedSelection(
+            from: selectedSessionStableID, delta: delta, in: sessions
+        )
     }
 
     private func activateSelectedSession(in sessions: [SessionState]) {
-        guard let selectedSessionStableID,
-              let targetSession = sessions.first(where: { $0.stableId == selectedSessionStableID }) else {
+        guard let targetSession = SessionListKeyboardNavigation.selectedSession(
+            stableID: selectedSessionStableID, in: sessions
+        ) else {
             return
         }
 
@@ -404,6 +408,30 @@ struct SessionListView: View {
         case .omp:
             return TerminalColors.omp
         }
+    }
+}
+
+@MainActor
+enum SessionListKeyboardNavigation {
+    static func sessions(from monitor: SessionMonitor) -> [SessionState] {
+        // Keyboard navigation is docked-only. Match its renderer's ordering and
+        // parent/subagent grouping using the current monitor snapshot each time.
+        let ordered = IslandExpandedRouteResolver.sessionListSessions(
+            surface: .docked, trigger: .click, from: monitor.instances
+        )
+        return PrimarySessionGroup.groups(from: ordered).flatMap { [$0.session] + $0.childSessions }
+    }
+
+    static func selectedSession(stableID: String?, in sessions: [SessionState]) -> SessionState? {
+        guard let stableID else { return nil }
+        return sessions.first { $0.stableId == stableID }
+    }
+
+    static func movedSelection(from stableID: String?, delta: Int, in sessions: [SessionState]) -> String? {
+        guard !sessions.isEmpty else { return nil }
+        let current = stableID.flatMap { id in sessions.firstIndex { $0.stableId == id } }
+            ?? (delta > 0 ? -1 : sessions.count)
+        return sessions[min(max(current + delta, 0), sessions.count - 1)].stableId
     }
 }
 
@@ -463,6 +491,7 @@ private struct SubagentAttachmentRow: View {
     let session: SessionState
     let isSelected: Bool
     let isHighlighted: Bool
+    let density: SessionListDensity
     let onSelect: () -> Void
     let onActivate: () -> Void
     let onChat: () -> Void
@@ -495,6 +524,9 @@ private struct SubagentAttachmentRow: View {
     }
 
     private var detail: String? {
+        if session.connectionState == .disconnected {
+            return AppLocalization.string("远程连接已断开")
+        }
         if let latestTool = latestToolCall {
             let preview = latestTool.inputPreview.trimmingCharacters(in: .whitespacesAndNewlines)
             if !preview.isEmpty {
@@ -565,7 +597,7 @@ private struct SubagentAttachmentRow: View {
                     .lineLimit(1)
                     .truncationMode(.tail)
 
-                if let detail {
+                if let detail, density == .regular || needsInAppResponse || session.needsPromptNotification {
                     HStack(alignment: .firstTextBaseline, spacing: 4) {
                         Text("└")
                             .font(.system(size: 11, weight: .medium, design: .monospaced))
@@ -599,7 +631,7 @@ private struct SubagentAttachmentRow: View {
         }
         .padding(.leading, 9)
         .padding(.trailing, 12)
-        .padding(.vertical, 6)
+        .padding(.vertical, density == .constrained ? 3 : 6)
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(
             RoundedRectangle(cornerRadius: 10, style: .continuous)
@@ -663,6 +695,7 @@ struct InstanceRow: View {
     let isSelected: Bool
     let isHighlighted: Bool
     let isYabaiAvailable: Bool
+    var density: SessionListDensity = .regular
     let onSelect: () -> Void
     let onActivate: () -> Void
     let onToggleExpanded: () -> Void
@@ -736,7 +769,11 @@ struct InstanceRow: View {
     }
 
     private var usesSingleLineCompactLayout: Bool {
-        isCollapsedCompactPresentation || isCodexSubagentCompactPresentation
+        isCollapsedCompactPresentation || isCodexSubagentCompactPresentation || usesConstrainedCompactPresentation
+    }
+
+    private var usesConstrainedCompactPresentation: Bool {
+        density == .constrained && !session.needsManualAttention && !session.needsPromptNotification && !isExpanded
     }
 
     private var isCollapsedCompactPresentation: Bool {
@@ -943,19 +980,29 @@ struct InstanceRow: View {
 
     @ViewBuilder
     private var avatarStatusBadge: some View {
-        switch session.phase {
-        case .processing, .compacting, .waitingForApproval:
-            animatedStatusBadge
-        case .waitingForInput:
-            Circle()
-                .fill(statusAccentColor)
-                .frame(width: 10, height: 10)
-                .overlay(
-                    Circle()
-                        .strokeBorder(Color.black.opacity(0.8), lineWidth: 2)
-                )
-        case .idle, .ended:
-            EmptyView()
+        if session.connectionState == .disconnected {
+            Image(systemName: "wifi.slash")
+                .font(.system(size: 7, weight: .bold))
+                .foregroundColor(Color.white.opacity(0.56))
+                .frame(width: 14, height: 14)
+                .background(Color.black.opacity(0.92))
+                .clipShape(Circle())
+                .help(AppLocalization.string("远程连接已断开"))
+        } else {
+            switch session.phase {
+            case .processing, .compacting, .waitingForApproval:
+                animatedStatusBadge
+            case .waitingForInput:
+                Circle()
+                    .fill(statusAccentColor)
+                    .frame(width: 10, height: 10)
+                    .overlay(
+                        Circle()
+                            .strokeBorder(Color.black.opacity(0.8), lineWidth: 2)
+                    )
+            case .idle, .ended:
+                EmptyView()
+            }
         }
     }
 
@@ -1109,7 +1156,7 @@ struct InstanceRow: View {
         if isWaitingForApproval {
             return TerminalColors.amber.opacity(isHovered ? 0.15 : 0.09)
         }
-        if session.phase.isActive {
+        if session.isExecutionActive {
             return Color.white.opacity(isHovered ? 0.08 : 0.04)
         }
         return isHovered ? Color.white.opacity(0.06) : Color.clear
@@ -1153,7 +1200,7 @@ struct InstanceRow: View {
     }
 
     private var shouldShowExpandedDetails: Bool {
-        guard !usesCodexSubagentTitleOnlyPresentation else { return false }
+        guard !usesCodexSubagentTitleOnlyPresentation, !usesConstrainedCompactPresentation else { return false }
         return !isMinimalCompactPresentation || isExpanded
     }
 
@@ -1230,7 +1277,7 @@ struct InstanceRow: View {
     private var shouldReserveIncomingPreviewLineHeight: Bool {
         guard detailsEnabled else { return false }
         guard shouldShowExpandedDetails else { return false }
-        guard session.phase.isActive else { return false }
+        guard session.isExecutionActive else { return false }
         guard latestUserLine == nil else { return false }
         return previewLines.count == 1
     }
@@ -1298,7 +1345,7 @@ struct InstanceRow: View {
     }
 
     private var assistantPrefixColor: Color {
-        providerColor.opacity(session.phase.isActive ? 0.96 : 0.92)
+        providerColor.opacity(session.isExecutionActive ? 0.96 : 0.92)
     }
 
     private var assistantTextColor: Color {
@@ -1308,7 +1355,7 @@ struct InstanceRow: View {
         if isWaitingForApproval {
             return .white.opacity(0.74)
         }
-        if session.phase.isActive {
+        if session.isExecutionActive {
             return .white.opacity(0.66)
         }
         return .white.opacity(0.52)
@@ -1324,6 +1371,9 @@ struct InstanceRow: View {
     }
 
     private var latestAssistantLine: String? {
+        if session.connectionState == .disconnected {
+            return AppLocalization.string("远程连接已断开")
+        }
         if session.needsQuestionResponse {
             return sanitized(session.intervention?.summaryText) ?? AppLocalization.string("需要你的输入")
         }
@@ -1493,6 +1543,9 @@ struct InstanceRow: View {
     }
 
     private var compactDetailSummary: String? {
+        if session.connectionState == .disconnected {
+            return AppLocalization.string("远程连接已断开")
+        }
         switch session.phase {
         case .processing:
             return session.codexSubagentSummaryText(for: session.isNativeRuntimeSession

@@ -55,10 +55,27 @@ final class ExperienceSoundTransitionTests: XCTestCase {
         XCTAssertEqual(tracker.sessionsNeedingReminder(from: [session], now: now).count, 1)
     }
 
+    func testDisconnectedSessionDoesNotPlayIdleReminder() {
+        let now = Date()
+        var tracker = IdleReminderSoundTracker()
+        var session = SessionState(
+            sessionId: "disconnected-idle-reminder",
+            cwd: "/tmp/project",
+            phase: .waitingForInput,
+            lastActivity: now.addingTimeInterval(-IdleReminderSoundTracker.reminderDelay - 1)
+        )
+        session.connectionState = .disconnected
+
+        XCTAssertTrue(tracker.sessionsNeedingReminder(from: [session], now: now).isEmpty)
+
+        session.connectionState = .connected
+        XCTAssertEqual(tracker.sessionsNeedingReminder(from: [session], now: now).map(\.sessionId), [session.sessionId])
+    }
+
     func testRapidSubmitHistorySurvivesTemporaryListChurn() {
         let now = Date()
         var tracker = RapidSubmitSoundTracker()
-        tracker.observe([session(id: "a", lastUserMessageDate: now.addingTimeInterval(-2))], now: now)
+        _ = tracker.observe([session(id: "a", lastUserMessageDate: now.addingTimeInterval(-2))], now: now)
 
         XCTAssertTrue(
             tracker.observe(

@@ -3,6 +3,30 @@ import XCTest
 @testable import Ping_Island
 
 final class SessionStoreFileUpdateTests: XCTestCase {
+    func testInitialClaudeProjectLabelComesFromOriginalTranscriptWorkspace() async throws {
+        let store = SessionStore.shared
+        let id = "project-label-\(UUID().uuidString)"
+        let root = "/tmp/original-project-\(UUID().uuidString)"
+        let encoded = root.replacingOccurrences(of: "/", with: "-").replacingOccurrences(of: ".", with: "-")
+        let client = SessionClientInfo(
+            kind: .claudeCode,
+            sessionFilePath: "/tmp/synthetic-home/.claude/projects/\(encoded)/\(id).jsonl"
+        )
+        for nestedDirectory in ["src", "scripts"] {
+            await store.process(.hookReceived(HookEvent(
+                sessionId: id, cwd: root + "/" + nestedDirectory, event: "SessionStart", status: "idle",
+                provider: .claude, clientInfo: client, pid: nil, tty: nil, tool: nil,
+                toolInput: nil, toolUseId: nil, notificationType: nil, message: nil
+            )))
+            let snapshot = await store.session(for: id)
+            let session = try XCTUnwrap(snapshot)
+            XCTAssertEqual(session.cwd, root + "/" + nestedDirectory)
+            XCTAssertEqual(session.projectName, URL(fileURLWithPath: root).lastPathComponent)
+            XCTAssertEqual(session.displayTitle, session.projectName)
+        }
+        await store.process(.sessionArchived(sessionId: id))
+    }
+
     func testNoOpEventDoesNotRepublishUnchangedSessions() async throws {
         let store = SessionStore.shared
         let sessionId = "publish-dedupe-\(UUID().uuidString)"
@@ -474,7 +498,7 @@ final class SessionStoreFileUpdateTests: XCTestCase {
             )
         ))
 
-        try await waitForSession(in: monitor, sessionId: sessionId) { session in
+        _ = try await waitForSession(in: monitor, sessionId: sessionId) { session in
             session.phase == .processing
         }
 

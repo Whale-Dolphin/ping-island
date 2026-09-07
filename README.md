@@ -117,6 +117,8 @@ To create a locally shareable unsigned package for local testing:
 
 The script re-signs the built app bundle with a consistent ad-hoc signature before creating the `.dmg` and `.zip`, which helps embedded frameworks launch more reliably on another machine. The package is still unsigned for distribution and not notarized, so first launch may still require `Open` from Finder's context menu or manual quarantine removal.
 The generated files land in `releases/unsigned/` as `PingIsland-<version>.dmg` and `PingIsland-<version>.zip`.
+
+The integrated-fork provenance, retained local behavior, and validation record are documented in [docs/fork-notes.md](docs/fork-notes.md).
 The DMG uses the repo-tracked installer artwork at `docs/images/ping-island-dmg-installer-background.png` by default; set `PING_ISLAND_DMG_BACKGROUND_SOURCE` if you want to preview a different background locally.
 
 To create signed and notarized release packages in GitHub Actions, configure the release secrets described in [docs/sparkle-release.md](docs/sparkle-release.md) and run `.github/workflows/release-packages.yml` against a `v*` tag or the manual workflow dispatch input. Official Homebrew Cask release notes are documented in [docs/homebrew-cask-release.md](docs/homebrew-cask-release.md).
@@ -206,7 +208,7 @@ Ping Island currently ships a 4-category settings panel:
 - **General** - launch at login and baseline app behavior
 - **Display** - notch display target and placement behavior
 - **Mascot** - client mascot previews, per-client overrides, animation states
-- **Sound** - experience-theme selection, event-specific sounds, sound pack mode, sound pack import
+- **Sound** - safe current-device notification routing, experience-theme selection, event-specific sounds, sound pack mode, sound pack import
 
 ## Experience Themes
 
@@ -259,6 +261,8 @@ Ping Island currently supports three sound modes under `Settings -> Sound`:
    - `System sounds` if you just want a different macOS sound per event.
    - `Sound pack` if you want fully custom audio files.
 4. Preview each event with the play button and leave only the event toggles you want enabled.
+
+Before each cue starts, Ping Island pins it to the output device already live on the Mac. AirPods that are already connected to the Mac remain valid; AirPods currently owned by another device are not requested through automatic output switching. If the current Mac output is unavailable, Ping Island falls back to the built-in speakers or skips the cue.
 
 ### Import a local sound pack
 

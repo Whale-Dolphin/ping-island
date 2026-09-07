@@ -100,21 +100,18 @@ struct SessionHoverDashboardView: View {
     let sessions: [SessionState]
     let sessionMonitor: SessionMonitor
     var density: HoverPreviewDensity = .regular
+    var hidesSessionPreviews = false
     var suppressInAppPromptControls = false
     var onQuestionInteractionStateChanged: (Bool) -> Void = { _ in }
-
-    private var displayedSessions: [SessionState] {
-        Array(sessions.prefix(3))
-    }
 
     var body: some View {
         ScrollView(.vertical, showsIndicators: false) {
             VStack(alignment: .leading, spacing: density.containerSpacing) {
-                if displayedSessions.isEmpty {
+                if sessions.isEmpty {
                     HoverEmptyPreviewView(density: density)
                 }
 
-                ForEach(displayedSessions) { session in
+                ForEach(sessions) { session in
                     let isHighlighted = session.needsApprovalResponse || session.needsQuestionResponse
                     if isHighlighted {
                         HoverSessionCard(
@@ -130,7 +127,8 @@ struct SessionHoverDashboardView: View {
                         SessionHoverCompactRow(
                             session: session,
                             isHighlighted: isHighlighted,
-                            density: density
+                            density: density,
+                            hidesPreview: hidesSessionPreviews
                         ) {
                             guard !session.clientInfo.suppressesActivationNavigation else { return }
                             Task {
@@ -231,6 +229,7 @@ private struct SessionHoverCompactRow: View {
     let session: SessionState
     var isHighlighted = false
     var density: HoverPreviewDensity = .regular
+    var hidesPreview = false
     let onOpen: () -> Void
     @ObservedObject private var settings = AppSettings.shared
     @State private var isHovered = false
@@ -256,7 +255,7 @@ private struct SessionHoverCompactRow: View {
     private var cardContent: some View {
         rowContent
             .padding(.horizontal, density.itemHorizontalPadding)
-            .padding(.vertical, density.itemVerticalPadding)
+            .padding(.vertical, hidesPreview ? 5 : density.itemVerticalPadding)
             .background(
                 HoverPreviewRowBackground(
                     accentColor: HoverPreviewStyle.emphasisColor(for: session),
@@ -272,7 +271,7 @@ private struct SessionHoverCompactRow: View {
         HStack(alignment: .center, spacing: density.rowSpacing) {
             HoverProviderGlyph(session: session)
 
-            VStack(alignment: .leading, spacing: density.rowDetailSpacing) {
+            VStack(alignment: .leading, spacing: hidesPreview ? 0 : density.rowDetailSpacing) {
                 HStack(alignment: .firstTextBaseline, spacing: density.badgeSpacing) {
                     if !usesTitleOnlySubagentPresentation && !session.shouldHideProjectContextInUI {
                         Text(session.projectName)
@@ -290,7 +289,7 @@ private struct SessionHoverCompactRow: View {
                         .lineLimit(1)
                 }
 
-                if !usesTitleOnlySubagentPresentation {
+                if !usesTitleOnlySubagentPresentation && !hidesPreview {
                     HoverSessionPreviewLines(session: session, compact: true)
                 }
             }
@@ -1062,7 +1061,7 @@ private enum HoverPreviewStyle {
     }
 
     static func assistantPrefixColor(for session: SessionState) -> Color {
-        return providerColor(for: session).opacity(session.phase.isActive ? 0.96 : 0.9)
+        return providerColor(for: session).opacity(session.isExecutionActive ? 0.96 : 0.9)
     }
 
     static func assistantTextColor(for session: SessionState, compact: Bool) -> Color {
@@ -1072,7 +1071,7 @@ private enum HoverPreviewStyle {
         if session.needsApprovalResponse {
             return .white.opacity(compact ? 0.74 : 0.8)
         }
-        if session.phase.isActive {
+        if session.isExecutionActive {
             return .white.opacity(compact ? 0.68 : 0.78)
         }
         return .white.opacity(compact ? 0.58 : 0.68)

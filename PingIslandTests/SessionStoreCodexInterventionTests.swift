@@ -2,6 +2,109 @@ import XCTest
 @testable import Ping_Island
 
 final class SessionStoreCodexInterventionTests: XCTestCase {
+    func testRemoteCodexHookCannotRebindOntoALocalWorkspaceThread() async {
+        let store = SessionStore.shared
+        let suffix = UUID().uuidString
+        let localID = "local-codex-\(suffix)"
+        let remoteID = "remote-codex-\(suffix)"
+        let cwd = "/tmp/codex-namespace-\(suffix)"
+        await store.upsertCodexSession(
+            sessionId: localID, name: "Local thread", preview: "Local reply", cwd: cwd,
+            phase: .idle, intervention: nil, clientInfo: SessionClientInfo.codexCLI()
+        )
+        await store.process(.hookReceived(HookEvent(
+            sessionId: remoteID, cwd: cwd, event: "UserPromptSubmit", status: "processing",
+            provider: .codex,
+            clientInfo: SessionClientInfo(kind: .codexCLI, remoteHost: "agent.example.invalid", remoteEndpointID: UUID()),
+            pid: Int(Int32.max), tty: nil, tool: nil, toolInput: nil,
+            toolUseId: nil, notificationType: nil, message: "working", ingress: .remoteBridge
+        )))
+        let resolved = await store.resolvedCodexSessionId(for: remoteID)
+        let local = await store.session(for: localID)
+        let remote = await store.session(for: remoteID)
+        XCTAssertEqual(resolved, remoteID)
+        XCTAssertEqual(local?.phase, .idle)
+        XCTAssertEqual(remote?.ingress, .remoteBridge)
+        await store.process(.sessionArchived(sessionId: localID))
+        await store.process(.sessionArchived(sessionId: remoteID))
+    }
+
+    func testResolvedRequestIdCannotClearANewerIntervention() async {
+        let store = SessionStore.shared
+        let id = "codex-request-match-\(UUID().uuidString)"
+        let intervention = SessionIntervention(
+            id: "new-request", kind: .question, title: "Choose", message: "Choose an option",
+            options: [], questions: [], supportsSessionScope: false, metadata: [:]
+        )
+        await store.upsertCodexSession(
+            sessionId: id, name: "Request matching", preview: nil, cwd: "/tmp/\(id)",
+            phase: .waitingForInput, intervention: intervention,
+            clientInfo: SessionClientInfo.codexCLI()
+        )
+        let before = await store.session(for: id)
+        await store.resolveCodexIntervention(sessionId: id, requestId: "old-request")
+        let unmatched = await store.session(for: id)
+        XCTAssertEqual(unmatched?.intervention, intervention)
+        XCTAssertEqual(unmatched?.phase, .waitingForInput)
+        XCTAssertEqual(unmatched?.lastActivity, before?.lastActivity)
+        await store.resolveCodexIntervention(sessionId: id, requestId: "new-request")
+        let matched = await store.session(for: id)
+        XCTAssertNil(matched?.intervention)
+        XCTAssertEqual(matched?.phase, .processing)
+        await store.process(.sessionArchived(sessionId: id))
+    }
+
+    func testLifecycleIncarnationSurvivesMetadataAndAliasButChangesAfterRemoval() async throws {
+        let store = SessionStore.shared
+        let suffix = UUID().uuidString
+        let originalID = "incarnation-original-\(suffix)"
+        let aliasID = "incarnation-alias-\(suffix)"
+        let cwd = "/tmp/incarnation-\(suffix)"
+        let now = Date()
+        let backfilledDate = now.addingTimeInterval(-3_600)
+        await store.upsertCodexSession(
+            sessionId: originalID, name: "Incarnation", preview: "Prior reply", cwd: cwd,
+            phase: .idle, intervention: nil, clientInfo: SessionClientInfo.codexCLI(),
+            createdAt: now, activityAt: now
+        )
+        let originalSnapshot = await store.session(for: originalID)
+        let original = try XCTUnwrap(originalSnapshot)
+
+        await store.upsertCodexSession(
+            sessionId: originalID, name: "Incarnation", preview: "Prior reply", cwd: cwd,
+            phase: .idle, intervention: nil, clientInfo: SessionClientInfo.codexCLI(),
+            createdAt: backfilledDate, activityAt: now
+        )
+        let backfilledSnapshot = await store.session(for: originalID)
+        let backfilled = try XCTUnwrap(backfilledSnapshot)
+        XCTAssertEqual(backfilled.createdAt, backfilledDate)
+        XCTAssertEqual(backfilled.lifecycleIncarnationID, original.lifecycleIncarnationID)
+
+        await store.upsertCodexSession(
+            sessionId: aliasID, name: nil, preview: "working", cwd: cwd,
+            phase: .processing, intervention: nil, clientInfo: SessionClientInfo.codexCLI(),
+            createdAt: now, activityAt: now
+        )
+        let migratedSnapshot = await store.session(for: originalID)
+        let migrated = try XCTUnwrap(migratedSnapshot)
+        XCTAssertEqual(migrated.sessionId, aliasID)
+        XCTAssertEqual(migrated.lifecycleIncarnationID, original.lifecycleIncarnationID)
+
+        await store.process(.sessionArchived(sessionId: aliasID))
+        await store.upsertCodexSession(
+            sessionId: aliasID, name: "Recreated", preview: "Prior reply", cwd: cwd,
+            phase: .idle, intervention: nil, clientInfo: SessionClientInfo.codexCLI(),
+            createdAt: migrated.createdAt, activityAt: now
+        )
+        let recreatedSnapshot = await store.session(for: aliasID)
+        let recreated = try XCTUnwrap(recreatedSnapshot)
+        XCTAssertEqual(recreated.sessionId, migrated.sessionId)
+        XCTAssertEqual(recreated.createdAt, migrated.createdAt)
+        XCTAssertNotEqual(recreated.lifecycleIncarnationID, migrated.lifecycleIncarnationID)
+        await store.process(.sessionArchived(sessionId: aliasID))
+        await store.process(.sessionArchived(sessionId: originalID))
+    }
+
     func testHistoricalCodexThreadListCreatedAtIsPreserved() async throws {
         let sessionId = "codex-historical-thread-\(UUID().uuidString)"
         let store = SessionStore.shared

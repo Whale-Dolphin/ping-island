@@ -166,8 +166,7 @@ final class SessionMonitorNativeRuntimeTests: XCTestCase {
             )
         ))
 
-        monitor.approvePermission(sessionId: sessionID, forSession: true)
-        try? await Task.sleep(nanoseconds: 100_000_000)
+        await monitor.approvePermission(sessionId: sessionID, forSession: true).value
 
         let approved = await runtimeCoordinator.approvals()
         XCTAssertEqual(approved.count, 1)
@@ -214,8 +213,7 @@ final class SessionMonitorNativeRuntimeTests: XCTestCase {
             )
         ))
 
-        monitor.approvePermission(sessionId: sessionID)
-        try? await Task.sleep(nanoseconds: 100_000_000)
+        await monitor.approvePermission(sessionId: sessionID).value
 
         let session = await SessionStore.shared.session(for: sessionID)
         XCTAssertNil(session?.intervention)
@@ -257,8 +255,7 @@ final class SessionMonitorNativeRuntimeTests: XCTestCase {
             clientInfo: SessionClientInfo.codexApp(threadId: sessionID)
         )
 
-        monitor.denyPermission(sessionId: sessionID, reason: "nope")
-        try? await Task.sleep(nanoseconds: 100_000_000)
+        await monitor.denyPermission(sessionId: sessionID, reason: "nope").value
 
         let session = await SessionStore.shared.session(for: sessionID)
         XCTAssertNil(session?.intervention)
@@ -355,8 +352,7 @@ final class SessionMonitorNativeRuntimeTests: XCTestCase {
             )
         )
 
-        monitor.answerIntervention(sessionId: sessionID, answers: ["mode": ["自动"]])
-        try? await Task.sleep(nanoseconds: 100_000_000)
+        await monitor.answerIntervention(sessionId: sessionID, answers: ["mode": ["自动"]]).value
         let answers = await runtimeCoordinator.answers()
         XCTAssertEqual(answers.count, 1)
         XCTAssertEqual(answers.first?.0, sessionID)
@@ -381,8 +377,7 @@ final class SessionMonitorNativeRuntimeTests: XCTestCase {
             )
         ))
 
-        monitor.denyPermission(sessionId: sessionID, reason: "nope")
-        try? await Task.sleep(nanoseconds: 100_000_000)
+        await monitor.denyPermission(sessionId: sessionID, reason: "nope").value
         let denials = await runtimeCoordinator.denials()
         XCTAssertEqual(denials, [sessionID])
 

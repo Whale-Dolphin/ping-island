@@ -115,6 +115,10 @@
 
 "通知" = "Notifications";
 "启用提示音" = "Enable sounds";
+"远程连接已断开" = "Remote connection lost";
+"远程转发已断开，%.0f 秒后自动重连…" = "Remote forwarding disconnected; reconnecting automatically in %.0f seconds…";
+"正在自动重连远程转发…" = "Reconnecting remote forwarding automatically…";
+"远程自动重连失败" = "Automatic remote reconnection failed";
 "10 分钟静音通知和声音" = "Mute notifications and sounds for 10 minutes";
 "通知与声音已静音至 %@，点击恢复" = "Notifications and sounds are muted until %@. Click to restore.";
 "已静音至 %@" = "Muted until %@";

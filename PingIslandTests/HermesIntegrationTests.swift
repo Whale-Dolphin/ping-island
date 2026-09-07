@@ -39,6 +39,27 @@ final class HermesIntegrationTests: XCTestCase {
         XCTAssertTrue(pluginSource.contains("\"hermes-plugin\""))
     }
 
+    func testHermesRemotePluginUsesRemoteBridgeAndSocket() throws {
+        let profile = try XCTUnwrap(ClientProfileRegistry.managedHookProfile(id: "hermes-hooks"))
+        let files = HookInstaller.managedPluginDirectoryFiles(
+            for: profile,
+            bridgeArguments: [
+                "/home/testuser/.ping-island/bin/ping-island-bridge",
+                "--source", "claude",
+                "--client-kind", "hermes"
+            ],
+            bridgeEnvironment: [
+                "ISLAND_SOCKET_PATH": "/home/testuser/.ping-island/run/agent-hook.sock"
+            ]
+        )
+        let source = try XCTUnwrap(files["__init__.py"])
+
+        XCTAssertTrue(source.contains("/home/testuser/.ping-island/bin/ping-island-bridge"))
+        XCTAssertTrue(source.contains("/home/testuser/.ping-island/run/agent-hook.sock"))
+        XCTAssertTrue(source.contains("env.update(BRIDGE_ENV)"))
+        XCTAssertFalse(source.contains(NSHomeDirectory() + "/.ping-island/bin"))
+    }
+
     func testHermesRuntimeProfileResolvesBrandAndMascot() {
         let profile = ClientProfileRegistry.matchRuntimeProfile(
             provider: .claude,

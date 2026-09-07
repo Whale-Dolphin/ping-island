@@ -114,6 +114,8 @@ xcodebuild -project PingIsland.xcodeproj -scheme PingIsland -configuration Relea
 
 默认会使用仓库里的 `docs/images/ping-island-dmg-installer-background.png` 作为 DMG 安装背景；如果你想在本地预览别的背景图，可以临时设置 `PING_ISLAND_DMG_BACKGROUND_SOURCE`。
 
+此整合分支的来源、本地行为保留清单和验证记录见 [docs/fork-notes.md](docs/fork-notes.md)。
+
 如果你想通过 GitHub Actions 产出带 `Developer ID` 签名并完成 notarization 的发布包，请先按 [docs/sparkle-release.md](docs/sparkle-release.md) 配好仓库 secrets，再运行 `.github/workflows/release-packages.yml`。官方 Homebrew Cask 发布说明见 [docs/homebrew-cask-release.md](docs/homebrew-cask-release.md)。
 
 完整的 Sparkle / notarization 发布流程见 [docs/sparkle-release.md](docs/sparkle-release.md)。
@@ -207,7 +209,7 @@ Ping Island 当前提供 4 个设置分类：
 - **General** - 登录启动与基础行为
 - **Display** - 显示器选择与位置行为
 - **Mascot** - 宠物预览、客户端覆盖、动作状态
-- **Sound** - 事件声音、声音包模式、声音包导入
+- **Sound** - 当前设备安全路由、事件声音、声音包模式、声音包导入
 
 ## 自定义音效
 
@@ -225,6 +227,8 @@ Ping Island 在 `设置 -> Sound` 里提供三种声音模式：
    - 如果只是想给不同事件换系统提示音，选 `系统音`。
    - 如果想使用自己的音频文件，选 `主题包`。
 4. 用每一行右侧的试听按钮确认效果，并只保留你需要的事件开关。
+
+每次提示音开始前，Ping Island 都会固定到 Mac 当前已经存活的输出设备。已经连接到 Mac 的 AirPods 可以正常使用；正由其他设备使用的 AirPods 不会通过自动切换被请求。如果当前 Mac 输出失效，则回退到内置扬声器；仍无可用设备时跳过该提示音。
 
 ### 导入本地主题包
 

@@ -64,7 +64,9 @@ if ! xcodebuild \
     -project "$PROJECT_FILE" \
     -scheme "$SCHEME" \
     -configuration Release \
+    -destination "generic/platform=macOS" \
     -derivedDataPath "$DERIVED_DATA_PATH" \
+    ONLY_ACTIVE_ARCH=NO \
     CODE_SIGN_IDENTITY=- \
     build; then
     echo ""
@@ -75,7 +77,9 @@ if ! xcodebuild \
         -project "$PROJECT_FILE" \
         -scheme "$SCHEME" \
         -configuration Release \
+        -destination "generic/platform=macOS" \
         -derivedDataPath "$DERIVED_DATA_PATH" \
+        ONLY_ACTIVE_ARCH=NO \
         CODE_SIGN_IDENTITY=- \
         SWIFT_OPTIMIZATION_LEVEL=-Onone \
         SWIFT_COMPILATION_MODE=singlefile \

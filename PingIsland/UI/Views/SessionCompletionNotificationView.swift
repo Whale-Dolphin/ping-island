@@ -8,8 +8,8 @@ private struct SessionCompletionContentHeightPreferenceKey: PreferenceKey {
     }
 }
 
-struct SessionCompletionNotification: Equatable, Identifiable {
-    enum Kind: String, Equatable {
+nonisolated struct SessionCompletionNotification: Equatable, Identifiable {
+    enum Kind: String, Hashable, Sendable {
         case completed
         case ended
         case compacted
@@ -46,10 +46,19 @@ struct SessionCompletionNotification: Equatable, Identifiable {
         }
     }
 
+    enum Identity: Hashable {
+        case completed(SessionCompletionKey)
+        // End/compaction events have no completed-turn key. Use captured lifecycle
+        // identifiers, never lastActivity (metadata polling changes that timestamp).
+        case lifecycle(kind: Kind, sessionID: String, incarnationID: UUID, turnID: String?, sequence: UInt64, itemID: String?)
+    }
+
     let id: UUID
-    var session: SessionState
+    let session: SessionState
     let kind: Kind
     let queuedAt: Date
+    let completionKey: SessionCompletionKey?
+    let identity: Identity
 
     init(
         id: UUID = UUID(),
@@ -61,6 +70,16 @@ struct SessionCompletionNotification: Equatable, Identifiable {
         self.session = session
         self.kind = kind
         self.queuedAt = queuedAt
+        let completionKey = kind == .completed ? SessionCompletionKey.make(for: session) : nil
+        self.completionKey = completionKey
+        self.identity = completionKey.map(Identity.completed) ?? .lifecycle(
+            kind: kind,
+            sessionID: session.sessionId,
+            incarnationID: session.lifecycleIncarnationID,
+            turnID: session.latestTurnId,
+            sequence: session.completionSequence,
+            itemID: session.chatItems.last?.id
+        )
     }
 }
 
@@ -75,20 +94,23 @@ enum SessionCompletionPreviewBuilder {
     }
 
     static func latestAssistantText(for session: SessionState) -> String? {
+        var activityFallback: String?
         for item in session.chatItems.reversed() {
             switch item.type {
             case .assistant(let text):
-                return sanitized(text)
+                if let text = sanitized(text) { return text }
             case .thinking(let text):
-                return sanitized(text)
+                activityFallback = activityFallback ?? sanitized(text)
             case .toolCall(let tool):
                 let preview = sanitized(tool.inputPreview)
                 let label = MCPToolFormatter.formatToolName(tool.name)
-                return preview.map { "\(label) \($0)" } ?? label
+                activityFallback = activityFallback ?? (preview.map { "\(label) \($0)" } ?? label)
             case .interrupted:
-                return "已中断"
+                activityFallback = activityFallback ?? "已中断"
             case .user:
-                continue
+                // Unversioned session summaries can still describe the previous
+                // turn. At this boundary use only activity from the current turn.
+                return sanitized(session.intervention?.summaryText) ?? activityFallback
             }
         }
 
@@ -96,7 +118,7 @@ enum SessionCompletionPreviewBuilder {
             return sanitized(intervention.summaryText)
         }
 
-        return sanitized(session.previewText) ?? sanitized(session.lastMessage)
+        return sanitized(session.previewText) ?? sanitized(session.lastMessage) ?? activityFallback
     }
 
     static func latestAssistantText(
@@ -118,16 +140,17 @@ enum SessionCompletionPreviewBuilder {
 }
 
 nonisolated enum SessionCompletionStateEvaluator {
+    // Keep upstream assistant evidence as part of readiness: an early tool-tail
+    // completion would capture a different key from the final assistant item.
     static func isCompletedReadySession(_ session: SessionState) -> Bool {
         guard case nil = session.intervention else { return false }
-        guard session.phase == .waitingForInput || isCompletedCodexIdleSession(session) else {
-            return false
-        }
+        guard !session.needsPromptNotification, session.connectionState == .connected else { return false }
+        guard session.phase == .waitingForInput || isCompletedIdleSession(session) else { return false }
         return hasCompletedAssistantReply(for: session)
     }
 
-    private static func isCompletedCodexIdleSession(_ session: SessionState) -> Bool {
-        session.provider == .codex && session.phase == .idle
+    private static func isCompletedIdleSession(_ session: SessionState) -> Bool {
+        session.phase == .idle && (session.provider == .codex || session.clientInfo.brand == .opencode)
     }
 
     static func allowsEndedNotificationAfterWaitingForInput(_ session: SessionState) -> Bool {
@@ -139,8 +162,8 @@ nonisolated enum SessionCompletionStateEvaluator {
             || session.clientInfo.isKimiClient
     }
 
-    /// Treat tool-only or commentary-only updates as in-progress. A completion notification
-    /// should only fire once the session has an actual assistant reply ready for the user.
+    /// Treat tool-only or commentary-only tails as in-progress for completion side
+    /// effects, even when the lifecycle transition arrives before the final reply.
     static func hasCompletedAssistantReply(for session: SessionState) -> Bool {
         for item in session.chatItems.reversed() {
             switch item.type {
@@ -155,13 +178,40 @@ nonisolated enum SessionCompletionStateEvaluator {
     }
 }
 
+/// A queue stores event snapshots, not live rows. A session may finish another turn
+/// (or leave the visible list) before an older result gets a chance to be presented.
+nonisolated struct SessionCompletionNotificationQueue {
+    private(set) var notifications: [SessionCompletionNotification] = []
+
+    mutating func enqueue(_ notification: SessionCompletionNotification) {
+        guard !notifications.contains(where: { $0.identity == notification.identity }) else { return }
+        notifications.append(notification)
+    }
+
+    mutating func removeAll(where predicate: (SessionCompletionNotification) -> Bool) {
+        notifications.removeAll(where: predicate)
+    }
+
+    mutating func dequeueNext(
+        isConsumed: (SessionCompletionNotification) -> Bool,
+        canPresent: (SessionCompletionNotification) -> Bool
+    ) -> SessionCompletionNotification? {
+        notifications.removeAll(where: isConsumed)
+        guard let index = notifications.firstIndex(where: canPresent) else { return nil }
+        return notifications.remove(at: index)
+    }
+}
+
 @MainActor
 final class SessionCompletionNotificationRegistry {
     static let shared = SessionCompletionNotificationRegistry()
 
     private var consumedCompletionKeys = Set<SessionCompletionKey>()
+    private var consumedLifecycleKeys = Set<SessionCompletionNotification.Identity>()
+    private var queue = SessionCompletionNotificationQueue()
 
-    private init() {}
+    // Pending results survive destruction/recreation of either surface's window.
+    var pendingNotifications: [SessionCompletionNotification] { queue.notifications }
 
     func isConsumed(session: SessionState) -> Bool {
         guard let key = SessionCompletionKey.make(for: session) else { return false }
@@ -171,6 +221,57 @@ final class SessionCompletionNotificationRegistry {
     func markConsumed(session: SessionState) {
         guard let key = SessionCompletionKey.make(for: session) else { return }
         consumedCompletionKeys.insert(key)
+    }
+
+    func isConsumed(_ notification: SessionCompletionNotification) -> Bool {
+        if let key = notification.completionKey {
+            return consumedCompletionKeys.contains(key)
+        }
+        return consumedLifecycleKeys.contains(notification.identity)
+    }
+
+    func markConsumed(_ notification: SessionCompletionNotification) {
+        // Never derive this from a newer live session: it could acknowledge another turn.
+        if let key = notification.completionKey {
+            consumedCompletionKeys.insert(key)
+        } else {
+            consumedLifecycleKeys.insert(notification.identity)
+        }
+    }
+
+    func enqueue(_ notification: SessionCompletionNotification) {
+        guard !isConsumed(notification) else { return }
+        queue.enqueue(notification)
+    }
+
+    func synchronizePendingNotifications() {
+        queue.removeAll(where: isConsumed)
+    }
+
+    func dequeueNext(
+        in sessions: [SessionState],
+        isPresentationBlocked: Bool
+    ) -> SessionCompletionNotification? {
+        guard !isPresentationBlocked else { return nil }
+        let next = queue.dequeueNext(isConsumed: isConsumed) { notification in
+            !SessionCompletionNotificationPolicy.hasBlockingActiveSession(
+                for: notification.session,
+                in: sessions
+            )
+        }
+        if let next {
+            // Claim on the main actor before either surface can present the same key.
+            markConsumed(next)
+        }
+        return next
+    }
+
+    func removePendingNotifications(matching shouldRemove: (SessionCompletionNotification.Kind) -> Bool) {
+        let removed = pendingNotifications.filter { shouldRemove($0.kind) }
+        queue.removeAll { shouldRemove($0.kind) }
+        for notification in removed {
+            markConsumed(notification)
+        }
     }
 }
 
@@ -194,7 +295,7 @@ enum SessionCompletionNotificationPolicy {
             return wasTrackedOrRecentlyCreated(session, previousPhase: previousPhase, now: now)
         }
 
-        guard previousPhase != .waitingForInput else { return false }
+        guard previousPhase != session.phase else { return false }
         return wasTrackedOrRecentlyCreated(session, previousPhase: previousPhase, now: now)
     }
 
@@ -239,10 +340,8 @@ enum SessionCompletionNotificationPolicy {
         for session: SessionState,
         in sessions: [SessionState]
     ) -> Bool {
-        sessions.contains { candidate in
-            guard candidate.stableId != session.stableId else { return false }
-            return isBlockingActiveSession(candidate)
-        }
+        // A newer turn on the same session also blocks a captured older result.
+        sessions.contains { $0.isExecutionActive || $0.needsManualAttention || $0.needsPromptNotification }
     }
 
     private static func isCodexCompletionSourcePhase(_ phase: SessionPhase) -> Bool {
@@ -250,17 +349,6 @@ enum SessionCompletionNotificationPolicy {
         case .processing, .waitingForInput, .waitingForApproval:
             return true
         case .idle, .ended, .compacting:
-            return false
-        }
-    }
-
-    private static func isBlockingActiveSession(_ session: SessionState) -> Bool {
-        switch session.phase {
-        case .processing, .waitingForApproval, .compacting:
-            return true
-        case .waitingForInput:
-            return !SessionCompletionStateEvaluator.isCompletedReadySession(session)
-        case .idle, .ended:
             return false
         }
     }
@@ -318,7 +406,7 @@ struct SessionCompletionNotificationView: View {
     }
 
     private var assistantPrefixColor: Color {
-        providerTint.opacity(session.phase.isActive ? 0.96 : 0.9)
+        providerTint.opacity(session.isExecutionActive ? 0.96 : 0.9)
     }
 
     private var assistantTextColor: Color {

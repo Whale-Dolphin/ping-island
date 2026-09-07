@@ -113,6 +113,23 @@ final class SameWorkspaceSessionSupersessionTests: XCTestCase {
         )
     }
 
+    func testRemoteSessionsNeverParticipateInLocalWorkspaceSupersession() {
+        let remote = session(id: "remote", ingress: .remoteBridge, pid: 101, phase: .processing, activityOffset: 0)
+        let local = session(id: "local", pid: 101, phase: .processing, activityOffset: 5)
+        XCTAssertNil(SameWorkspaceSessionSupersession.workspaceKey(for: remote))
+        XCTAssertFalse(SameWorkspaceSessionSupersession.canBeSuperseded(
+            remote, now: reference.addingTimeInterval(120), isProcessAlive: { _, _ in
+                XCTFail("A remote PID must never be queried in the local process namespace")
+                return false
+            }
+        ))
+        let visible = SameWorkspaceSessionSupersession.removingSupersededSessions(
+            from: [remote, local], now: reference.addingTimeInterval(120),
+            isProcessAlive: { _, _ in false }
+        )
+        XCTAssertEqual(visible.map(\.sessionId), ["remote", "local"])
+    }
+
     // MARK: - Restarted / orphaned sessions
 
     func testOrphanedSessionIsSupersededByNewerSibling() {

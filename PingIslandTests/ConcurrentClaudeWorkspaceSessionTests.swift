@@ -13,6 +13,45 @@ import XCTest
 /// each other on every hook event.
 final class ConcurrentClaudeWorkspaceSessionTests: XCTestCase {
 
+    func testOnlyTheExactSameLocalClaudeProcessIsDeduplicated() {
+        let now = Date()
+        func session(_ id: String, pid: Int?, ingress: SessionIngress = .hookBridge) -> SessionState {
+            SessionState(
+                sessionId: id, cwd: "/tmp/shared-project", ingress: ingress,
+                pid: pid, phase: .processing, lastActivity: now, createdAt: now
+            )
+        }
+        var duplicate = session("duplicate", pid: 101)
+        duplicate.lastActivity = now.addingTimeInterval(-1)
+        let sessions = [
+            duplicate, session("current", pid: 101), session("independent", pid: 102),
+            session("pidless", pid: nil), session("invalid-pid", pid: 0),
+            session("remote", pid: 101, ingress: .remoteBridge),
+            session("native", pid: 101, ingress: .nativeRuntime)
+        ]
+        let visible = SessionMonitor.deduplicateSameLocalClaudeProcessSessions(sessions)
+        XCTAssertEqual(visible.map(\.sessionId), ["current", "independent", "pidless", "invalid-pid", "remote", "native"])
+    }
+
+    func testEqualActivityProcessDedupeIsIndependentOfInputOrder() {
+        let now = Date()
+        let a = SessionState(sessionId: "a", cwd: "/tmp/project-a", pid: 101, lastActivity: now, createdAt: now)
+        let b = SessionState(sessionId: "b", cwd: "/tmp/project-b", pid: 101, lastActivity: now, createdAt: now)
+        XCTAssertEqual(SessionMonitor.deduplicateSameLocalClaudeProcessSessions([a, b]).map(\.sessionId), ["a"])
+        XCTAssertEqual(SessionMonitor.deduplicateSameLocalClaudeProcessSessions([b, a]).map(\.sessionId), ["a"])
+    }
+
+    func testNonClaudeClientSharingAPidIsNotCollapsed() {
+        let now = Date()
+        let claude = SessionState(sessionId: "claude", cwd: "/tmp/project", pid: 101, lastActivity: now)
+        let other = SessionState(
+            sessionId: "qwen", cwd: "/tmp/project",
+            clientInfo: SessionClientInfo(kind: .custom, profileID: "qwen-code", name: "Qwen Code"),
+            pid: 101, lastActivity: now
+        )
+        XCTAssertEqual(SessionMonitor.deduplicateSameLocalClaudeProcessSessions([claude, other]).count, 2)
+    }
+
     private let clientInfo = SessionClientInfo(kind: .claudeCode, name: "Claude Code")
 
     private func promptEvent(sessionId: String, cwd: String, pid: Int?, message: String) -> HookEvent {

@@ -3033,6 +3033,7 @@ private struct SettingsPanelContentView: View {
             )
             .padding(.bottom, presentation == .window ? 12 : 14)
         }
+        .accessibilityIdentifier("settings.sidebar")
         .padding(presentation == .window ? 0 : 8)
         .background {
             if presentation == .popover {
@@ -4251,7 +4252,6 @@ struct SettingsWindowView: View {
                 presentation: .window,
                 onClose: onClose
             )
-            .accessibilityIdentifier("settings.root")
         }
     }
 }

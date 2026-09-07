@@ -194,6 +194,10 @@ final class OpenCodeIntegrationTests: XCTestCase {
         XCTAssertTrue(source.contains("export default server"))
         XCTAssertTrue(source.contains("type === \"permission.asked\""))
         XCTAssertTrue(source.contains("type === \"question.asked\""))
+        XCTAssertTrue(source.contains("type === \"session.idle\""))
+        XCTAssertTrue(source.contains("function makeIdlePayload(rawSessionID)"))
+        XCTAssertTrue(source.contains("status: \"idle\""))
+        XCTAssertTrue(source.contains("lastIdleEventAt"))
         XCTAssertTrue(source.contains("hook_event_name: \"PermissionRequest\""))
         XCTAssertTrue(source.contains("hook_event_name: \"PreToolUse\""))
         XCTAssertTrue(source.contains("tool_name: \"AskUserQuestion\""))
@@ -203,6 +207,61 @@ final class OpenCodeIntegrationTests: XCTestCase {
         XCTAssertTrue(source.contains("stdout: captureResponse ? \"pipe\" : \"ignore\""))
         XCTAssertTrue(source.contains("_env: collectBridgeEnv()"))
         XCTAssertTrue(source.contains("_tty: detectedTTY"))
+    }
+
+    func testOpenCodeIdleStopBecomesIdleCompletionWithoutManualAttention() async {
+        let sessionId = "opencode-idle-\(UUID().uuidString)"
+        let store = SessionStore.shared
+        let clientInfo = SessionClientInfo(
+            kind: .custom,
+            profileID: "opencode",
+            name: "OpenCode",
+            origin: "cli",
+            originator: "OpenCode",
+            threadSource: "opencode-plugin"
+        )
+
+        await store.process(.hookReceived(HookEvent(
+            sessionId: sessionId,
+            cwd: "/tmp/opencode-project",
+            event: "UserPromptSubmit",
+            status: "processing",
+            provider: .claude,
+            clientInfo: clientInfo,
+            pid: nil,
+            tty: nil,
+            tool: nil,
+            toolInput: nil,
+            toolUseId: nil,
+            notificationType: nil,
+            message: "检查状态"
+        )))
+
+        await store.process(.hookReceived(HookEvent(
+            sessionId: sessionId,
+            cwd: "/tmp/opencode-project",
+            event: "Stop",
+            status: "idle",
+            provider: .claude,
+            clientInfo: clientInfo,
+            pid: nil,
+            tty: nil,
+            tool: nil,
+            toolInput: nil,
+            toolUseId: nil,
+            notificationType: nil,
+            message: "已经完成。"
+        )))
+
+        let session = await store.session(for: sessionId)
+        XCTAssertEqual(session?.phase, .idle)
+        XCTAssertEqual(session?.lastMessageRole, "assistant")
+        XCTAssertEqual(session?.lastMessage, "已经完成。")
+        XCTAssertFalse(session?.needsManualAttention ?? true)
+        XCTAssertEqual(session.map(MascotStatus.init(session:)), .idle)
+        XCTAssertTrue(session.map(SessionCompletionStateEvaluator.isCompletedReadySession) ?? false)
+
+        await store.process(.sessionArchived(sessionId: sessionId))
     }
 
     func testOpenCodeActivationConfigInstallsPluginEntryWithoutRemovingOthers() throws {

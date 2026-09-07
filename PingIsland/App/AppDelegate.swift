@@ -7,7 +7,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     private var screenObserver: ScreenObserver?
     private let launchConfiguration = AppLaunchConfiguration()
     private let startupSessionMonitor = SessionMonitor()
-    private let globalShortcutManager = GlobalShortcutManager.shared
+    private lazy var globalShortcutManager = GlobalShortcutManager.shared
     private var shouldPresentSettingsAfterOnboarding = false
     private var shouldRunHookWalkthroughAfterOnboarding = false
 
@@ -81,7 +81,9 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             }
         }
 
-        globalShortcutManager.start()
+        if !launchConfiguration.isRunningTests {
+            globalShortcutManager.start()
+        }
 
         if launchFlow.shouldPresentSurfaceModeOnboarding {
             PresentationModeWelcomeWindowController.shared.present { [weak self] selectedMode in
@@ -93,12 +95,11 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             presentHookInstallOnboardingIfNeeded()
         }
 
-        // Route launch feedback through the selected experience and sound mode.
-        Task { @MainActor in
-            AppSettings.playClientStartupSound()
-        }
-
         if !launchConfiguration.isRunningTests {
+            // Route launch feedback through the selected experience and sound mode.
+            Task { @MainActor in
+                AppSettings.playClientStartupSound()
+            }
             Task {
                 try? await Task.sleep(nanoseconds: 10_000_000_000)
                 await TelemetryService.shared.recordAppLaunch()

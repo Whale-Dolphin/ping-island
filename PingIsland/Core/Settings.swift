@@ -85,46 +85,77 @@ enum NotificationSound: String, CaseIterable {
     }
 }
 
+@MainActor
+protocol CoordinatedSound: AnyObject {
+    var isPlaying: Bool { get }
+    var volume: Float { get set }
+    var outputDeviceUID: String? { get set }
+    func play() -> Bool
+    func stop() -> Bool
+}
+
+extension NSSound: CoordinatedSound {
+    var outputDeviceUID: String? {
+        get { playbackDeviceIdentifier }
+        set { playbackDeviceIdentifier = newValue }
+    }
+}
+
+@MainActor
 final class SoundPlaybackCoordinator {
-    private var activeSound: NSSound?
+    private var activeSound: (any CoordinatedSound)?
+    private let isEnabled: () -> Bool
+    private let outputDeviceUID: () -> String?
+
+    init(
+        isEnabled: @escaping () -> Bool = { true },
+        outputDeviceUID: @escaping () -> String? = { NotificationAudioOutputResolver.outputDeviceUID() }
+    ) {
+        self.isEnabled = isEnabled
+        self.outputDeviceUID = outputDeviceUID
+    }
 
     @discardableResult
-    func play(_ sound: NSSound, volume: Float) -> Bool {
-        stopActiveSound(except: sound)
-
-        if isActiveSound(sound), sound.isPlaying {
-            sound.stop()
+    func play(_ sound: any CoordinatedSound, volume: Float) -> Bool {
+        guard isEnabled(), volume.isFinite, volume > 0 else {
+            stop()
+            return false
+        }
+        guard let deviceUID = outputDeviceUID(), !deviceUID.isEmpty else {
+            // Leaving the device nil would re-enable automatic output switching.
+            stop()
+            return false
         }
 
-        sound.volume = volume
+        if let activeSound, activeSound !== sound {
+            stop()
+        }
+        if sound.isPlaying {
+            _ = sound.stop()
+        }
+        sound.outputDeviceUID = deviceUID
+        sound.volume = min(volume, 1)
         let didPlay = sound.play()
         activeSound = didPlay ? sound : nil
         return didPlay
     }
 
-    func clearIfActive(_ sound: NSSound) {
-        guard isActiveSound(sound) else { return }
-        activeSound = nil
-    }
-
-    private func stopActiveSound(except sound: NSSound) {
-        guard let activeSound, !isSameSound(activeSound, sound) else { return }
-        if activeSound.isPlaying {
-            activeSound.stop()
-        }
+    func clearIfActive(_ sound: any CoordinatedSound) {
+        guard let activeSound, activeSound === sound else { return }
         self.activeSound = nil
     }
 
-    private func isActiveSound(_ sound: NSSound) -> Bool {
-        guard let activeSound else { return false }
-        return isSameSound(activeSound, sound)
+    func stop() {
+        if let activeSound, activeSound.isPlaying {
+            _ = activeSound.stop()
+        }
+        activeSound = nil
     }
-
-    private func isSameSound(_ lhs: NSSound, _ rhs: NSSound) -> Bool { lhs === rhs }
 }
 
+@MainActor
 enum AppSoundPlayback {
-    static let shared = SoundPlaybackCoordinator()
+    static let shared = SoundPlaybackCoordinator(isEnabled: { AppSettings.soundEnabled })
 }
 
 enum UsageValueMode: String, CaseIterable, Identifiable {
@@ -1344,8 +1375,9 @@ final class AppSettingsStore: ObservableObject {
 
     init(
         defaults: UserDefaults = .standard,
-        bridgeRuntimeConfigWriter: @escaping (BridgeRuntimeConfigSnapshot) -> Void = {
-            BridgeRuntimeConfigWriter.write($0)
+        bridgeRuntimeConfigWriter: @escaping (BridgeRuntimeConfigSnapshot) -> Void = { snapshot in
+            guard !AppLaunchConfiguration.isTestProcess() else { return }
+            BridgeRuntimeConfigWriter.write(snapshot)
         }
     ) {
         self.defaults = defaults

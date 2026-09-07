@@ -8,6 +8,8 @@ import Glibc
 #endif
 
 public enum HookPayloadMapper {
+    private static let codexRolloutReadChunkBytes = 64 * 1_024
+    private static let maximumCodexRolloutContextBytes = 4 * 1_024 * 1_024
     private static let questionToolNames: Set<String> = [
         "askuserquestion",
         "askfollowupquestion"
@@ -46,6 +48,18 @@ public enum HookPayloadMapper {
         let terminalContext = makeTerminalContext(environment: effectiveEnvironment, payload: payload)
         let sessionKey = detectSessionKey(payload: payload, environment: effectiveEnvironment, provider: source)
         var metadata = mergedMetadata(arguments: arguments, payload: payload, terminalContext: terminalContext)
+        if source == .codex, eventType == "PermissionRequest" {
+            let reviewer = nonEmpty(metadata["approvals_reviewer"])
+                ?? nonEmpty(metadata["approvalsReviewer"])
+                ?? nonEmpty(metadata["approval_reviewer"])
+                ?? codexApprovalReviewer(
+                    transcriptPath: metadata["transcript_path"], turnID: metadata["turn_id"]
+                )
+            // Resolve on the originating host: a remote rollout is not readable
+            // by the app. Do not change approval policy, permission mode or sandbox.
+            metadata["approvals_reviewer"] = reviewer?
+                .lowercased().replacingOccurrences(of: "-", with: "_")
+        }
         if runtimeConfig.routePromptsToTerminal {
             // Marker the app side reads to skip building an in-app prompt for
             // this event. Keeps the envelope flowing for status updates only.
@@ -455,6 +469,11 @@ public enum HookPayloadMapper {
             }
             return mapStatusString(text)
         }
+        if clientKind == "opencode", eventType.caseInsensitiveCompare("Stop") == .orderedSame {
+            // Managed plugins installed before session.idle support emitted a
+            // bare Stop. OpenCode uses it for a completed turn, not a question.
+            return SessionStatus(kind: .idle)
+        }
         if isGeminiHookClient(clientKind) {
             return geminiStatus(eventType: eventType, payload: payload)
         }
@@ -623,8 +642,10 @@ public enum HookPayloadMapper {
             return SessionStatus(kind: .thinking, detail: string)
         case let text where text.contains("compact"):
             return SessionStatus(kind: .compacting, detail: string)
-        case let text where text.contains("done") || text.contains("idle"):
+        case let text where text.contains("done"):
             return SessionStatus(kind: .completed, detail: string)
+        case let text where text.contains("idle"):
+            return SessionStatus(kind: .idle, detail: string)
         case let text where text.contains("error") || text.contains("fail"):
             return SessionStatus(kind: .error, detail: string)
         default:
@@ -1051,6 +1072,66 @@ public enum HookPayloadMapper {
             metadata["cwd"] = resolvedCWD
         }
         return metadata
+    }
+
+    private static func codexApprovalReviewer(
+        transcriptPath: String?,
+        turnID: String?
+    ) -> String? {
+        guard let transcriptPath = nonEmpty(transcriptPath),
+              let turnID = nonEmpty(turnID),
+              let handle = FileHandle(forReadingAtPath: transcriptPath) else {
+            return nil
+        }
+        defer { try? handle.close() }
+
+        func matchingReviewer(in line: Data) -> (matched: Bool, reviewer: String?) {
+            guard let json = try? JSONSerialization.jsonObject(with: line) as? [String: Any],
+                  json["type"] as? String == "turn_context",
+                  let context = json["payload"] as? [String: Any],
+                  context["turn_id"] as? String == turnID else { return (false, nil) }
+            return (true, nonEmpty(context["approvals_reviewer"] as? String)
+                ?? nonEmpty(context["approvalsReviewer"] as? String))
+        }
+
+        do {
+            var endOffset = try handle.seekToEnd()
+            var suffix = Data()
+            var discardingOversizedLine = false
+            // Long tool output can push the matching turn context arbitrarily
+            // far back. Bound each read and retained line, not the search range.
+            while endOffset > 0 {
+                let count = Int(min(UInt64(codexRolloutReadChunkBytes), endOffset))
+                endOffset -= UInt64(count)
+                try handle.seek(toOffset: endOffset)
+                guard let chunk = try handle.read(upToCount: count), chunk.count == count else { return nil }
+                let fragments = chunk.split(separator: 0x0A, omittingEmptySubsequences: false)
+                for fragment in fragments.dropFirst().reversed() {
+                    if !discardingOversizedLine, fragment.count + suffix.count <= maximumCodexRolloutContextBytes {
+                        var line = Data(fragment)
+                        line.append(suffix)
+                        let result = matchingReviewer(in: line)
+                        if result.matched { return result.reviewer }
+                    }
+                    suffix.removeAll(keepingCapacity: false)
+                    discardingOversizedLine = false
+                }
+                if let prefix = fragments.first, !discardingOversizedLine {
+                    if prefix.count + suffix.count > maximumCodexRolloutContextBytes {
+                        suffix.removeAll(keepingCapacity: false)
+                        discardingOversizedLine = true
+                    } else {
+                        var combined = Data(prefix)
+                        combined.append(suffix)
+                        suffix = combined
+                    }
+                }
+            }
+            if !discardingOversizedLine { return matchingReviewer(in: suffix).reviewer }
+        } catch {
+            return nil
+        }
+        return nil
     }
 
     private static func detectedSourceProcessName() -> String? {

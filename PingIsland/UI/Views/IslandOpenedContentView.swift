@@ -10,6 +10,8 @@ struct IslandOpenedContentView: View {
     let activeCompletionNotification: SessionCompletionNotification?
     var highlightedSessionStableID: String? = nil
     var contentWidthOverride: CGFloat? = nil
+    var sessionListDensity: SessionListDensity = .regular
+    var maximumContentHeight: CGFloat? = nil
     let onAttentionActionCompleted: () -> Void
     let onCompletionNotificationHoverChanged: (Bool) -> Void
     let onDismissCompletionNotification: () -> Void
@@ -41,8 +43,15 @@ struct IslandOpenedContentView: View {
         switch route {
         case .sessionList:
             SessionListView(
+                sessions: IslandExpandedRouteResolver.sessionListSessions(
+                    surface: surface,
+                    trigger: trigger,
+                    from: sessionMonitor.instances
+                ),
                 sessionMonitor: sessionMonitor,
                 viewModel: viewModel,
+                density: sessionListDensity,
+                constrainsHeight: surface == .floating,
                 enableKeyboardNavigation: surface == .docked,
                 highlightedSessionStableID: highlightedSessionStableID
             )
@@ -51,6 +60,12 @@ struct IslandOpenedContentView: View {
                 sessions: hoverPreviewSessions,
                 sessionMonitor: sessionMonitor,
                 density: surface == .floating ? .detachedCompact : .regular,
+                hidesSessionPreviews: surface == .floating
+                    && DetachedIslandContentModel.hoverDashboardUsesCondensedRows(
+                        for: hoverPreviewSessions,
+                        viewModel: viewModel,
+                        maximumContentHeight: maximumContentHeight
+                    ),
                 onQuestionInteractionStateChanged: { viewModel.setInlineTextInputActive($0) }
             )
         case .attentionNotification(let session):
@@ -63,20 +78,14 @@ struct IslandOpenedContentView: View {
                 onActionCompleted: onAttentionActionCompleted
             )
         case .completionNotification(let notification):
-            SessionCompletionNotificationView(
-                notification: liveNotification(notification),
-                presentationStyle: style == .detached ? .bubble : .panel,
-                onHoverChanged: onCompletionNotificationHoverChanged,
-                onDismiss: onDismissCompletionNotification
-            )
-            .background(
-                GeometryReader { geometry in
-                    Color.clear.preference(
-                        key: OpenedPanelContentHeightPreferenceKey.self,
-                        value: geometry.size.height
-                    )
+            if surface == .floating {
+                ScrollView(.vertical, showsIndicators: true) {
+                    completionContent(notification)
                 }
-            )
+                .scrollBounceBehavior(.basedOnSize)
+            } else {
+                completionContent(notification)
+            }
         case .chat(let session):
             let liveSession = liveSession(for: session)
 
@@ -97,20 +106,25 @@ struct IslandOpenedContentView: View {
         }
     }
 
-    private func liveSession(for session: SessionState) -> SessionState {
-        sessionMonitor.instances.first(where: { $0.sessionId == session.sessionId }) ?? session
+    private func completionContent(_ notification: SessionCompletionNotification) -> some View {
+        SessionCompletionNotificationView(
+            notification: notification,
+            presentationStyle: style == .detached ? .bubble : .panel,
+            onHoverChanged: onCompletionNotificationHoverChanged,
+            onDismiss: onDismissCompletionNotification
+        )
+        .background(
+            GeometryReader { geometry in
+                Color.clear.preference(
+                    key: OpenedPanelContentHeightPreferenceKey.self,
+                    value: geometry.size.height
+                )
+            }
+        )
     }
 
-    private func liveNotification(_ notification: SessionCompletionNotification) -> SessionCompletionNotification {
-        guard let latestSession = sessionMonitor.instances.first(where: {
-            $0.sessionId == notification.session.sessionId
-        }) else {
-            return notification
-        }
-
-        var updated = notification
-        updated.session = latestSession
-        return updated
+    private func liveSession(for session: SessionState) -> SessionState {
+        sessionMonitor.instances.first(where: { $0.sessionId == session.sessionId }) ?? session
     }
 
     private var contentWidth: CGFloat {

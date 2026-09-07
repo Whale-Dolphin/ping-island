@@ -318,7 +318,7 @@ final class SoundPackCatalog: NSObject, ObservableObject, NSSoundDelegate {
             return false
         }
         guard SoundPackScanner.loadPack(at: url) != nil else {
-            NSSound.beep()
+            AppSettings.playSound(named: NotificationSound.basso.soundName)
             return false
         }
 

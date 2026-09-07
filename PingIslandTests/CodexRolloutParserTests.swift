@@ -3,6 +3,99 @@ import XCTest
 @testable import Ping_Island
 
 final class CodexRolloutParserTests: XCTestCase {
+    func testReviewerInferenceSurvivesBatchesAndIncrementalSettingsChanges() async throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let threadId = "reviewer-incremental-\(UUID().uuidString)"
+        let file = directory.appendingPathComponent("rollout.jsonl")
+        let header = """
+        {"type":"session_meta","payload":{"id":"\(threadId)","cwd":"/tmp/reviewer-project","source":"cli"}}
+        {"type":"turn_context","payload":{"turn_id":"turn-1","approval_policy":"on-request","approvals_reviewer":" AUTO-REVIEW "}}
+        """
+        let padding = Array(repeating: "{\"type\":\"event_msg\",\"payload\":{\"type\":\"token_count\"}}", count: 140).joined(separator: "\n")
+        let call = """
+        {"type":"event_msg","payload":{"type":"task_started"}}
+        {"type":"response_item","payload":{"type":"function_call","name":"mcp__test__read","arguments":"{}","call_id":"call-1"}}
+        """
+        try (header + "\n" + padding + "\n" + call + "\n").write(to: file, atomically: true, encoding: .utf8)
+        let parser = CodexRolloutParser()
+        let client = SessionClientInfo(kind: .codexCLI, sessionFilePath: file.path)
+        var snapshot = await parser.parseThread(threadId: threadId, fallbackCwd: "/tmp/reviewer-project", clientInfo: client)
+        XCTAssertEqual(snapshot?.phase, .processing)
+        XCTAssertNil(snapshot?.intervention)
+
+        let handle = try FileHandle(forWritingTo: file)
+        defer { try? handle.close() }
+        try handle.seekToEnd()
+        for (reviewer, phase) in [("guardian_subagent", SessionPhase.waitingForInput), ("auto_review", .processing)] {
+            try handle.write(contentsOf: Data("{\"type\":\"turn_context\",\"payload\":{\"turn_id\":\"turn-1\",\"approvalsReviewer\":\"\(reviewer)\"}}\n".utf8))
+            snapshot = await parser.parseThread(threadId: threadId, fallbackCwd: "/tmp/reviewer-project", clientInfo: client)
+            XCTAssertEqual(snapshot?.phase, phase)
+            XCTAssertEqual(snapshot?.intervention != nil, phase == .waitingForInput)
+        }
+        // Missing reviewer metadata on another turn is unknown, not inherited auto_review.
+        try handle.write(contentsOf: Data("{\"type\":\"turn_context\",\"payload\":{\"turn_id\":\"turn-2\"}}\n".utf8))
+        snapshot = await parser.parseThread(threadId: threadId, fallbackCwd: "/tmp/reviewer-project", clientInfo: client)
+        XCTAssertEqual(snapshot?.phase, .waitingForInput)
+        let metrics = await parser.debugReadMetrics(forFilePath: file.path)
+        XCTAssertEqual(metrics?.fullRebuildCount, 1)
+        XCTAssertEqual(metrics?.incrementalReadCount, 3)
+    }
+
+    func testNeverPolicyDoesNotInferMCPHumanApproval() async throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let file = directory.appendingPathComponent("rollout.jsonl")
+        try """
+        {"type":"session_meta","payload":{"id":"never-policy","cwd":"/tmp/reviewer-project","source":"cli"}}
+        {"type":"turn_context","payload":{"turn_id":"turn-1","approval_policy":" NEVER ","approvals_reviewer":"user"}}
+        {"type":"response_item","payload":{"type":"function_call","name":"mcp__test__read","arguments":"{}","call_id":"call-1"}}
+        """.write(to: file, atomically: true, encoding: .utf8)
+        let parser = CodexRolloutParser()
+        let snapshot = await parser.parseThread(
+            threadId: "never-policy", fallbackCwd: "/tmp/reviewer-project",
+            clientInfo: SessionClientInfo(kind: .codexCLI, sessionFilePath: file.path)
+        )
+        XCTAssertEqual(snapshot?.phase, .processing)
+        XCTAssertNil(snapshot?.intervention)
+    }
+
+    func testRolloutParserKeepsNewTaskProcessingAfterPreviousTaskCompleted() async throws {
+        let tempDirectory = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        try FileManager.default.createDirectory(at: tempDirectory, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: tempDirectory) }
+
+        let threadId = "codex-multiturn-\(UUID().uuidString)"
+        let rolloutURL = tempDirectory.appendingPathComponent("rollout-\(threadId).jsonl")
+        let rollout = """
+        {"timestamp":"2026-08-08T01:00:00Z","type":"session_meta","payload":{"id":"\(threadId)","cwd":"/tmp/ping-island-project","originator":"Codex Desktop","source":"desktop"}}
+        {"timestamp":"2026-08-08T01:00:01Z","type":"event_msg","payload":{"type":"task_started"}}
+        {"timestamp":"2026-08-08T01:00:02Z","type":"event_msg","payload":{"type":"user_message","message":"finish the first task"}}
+        {"timestamp":"2026-08-08T01:00:03Z","type":"event_msg","payload":{"type":"agent_message","phase":"final","message":"The first task is complete."}}
+        {"timestamp":"2026-08-08T01:00:04Z","type":"event_msg","payload":{"type":"task_complete"}}
+        {"timestamp":"2026-08-08T01:01:00Z","type":"event_msg","payload":{"type":"task_started"}}
+        {"timestamp":"2026-08-08T01:01:01Z","type":"event_msg","payload":{"type":"user_message","message":"start the second task"}}
+        """
+        try rollout.write(to: rolloutURL, atomically: true, encoding: .utf8)
+
+        let snapshot = await CodexRolloutParser.shared.parseThread(
+            threadId: threadId,
+            fallbackCwd: "/tmp/ping-island-project",
+            clientInfo: SessionClientInfo(
+                kind: .codexApp,
+                profileID: "codex-app",
+                name: "Codex App",
+                bundleIdentifier: "com.openai.codex",
+                sessionFilePath: rolloutURL.path
+            )
+        )
+
+        XCTAssertEqual(snapshot?.phase, .processing)
+    }
+
     func testRolloutParserIgnoresCodexMemoryMaintenanceThread() async throws {
         let tempDirectory = FileManager.default.temporaryDirectory
             .appendingPathComponent(UUID().uuidString, isDirectory: true)
@@ -107,6 +200,37 @@ final class CodexRolloutParserTests: XCTestCase {
         XCTAssertEqual(snapshot?.intervention?.title, "MCP Tool Approval Needed")
         XCTAssertEqual(snapshot?.intervention?.metadata["server"], "omx_state")
         XCTAssertEqual(snapshot?.intervention?.metadata["toolName"], "state_get_status")
+    }
+
+    func testRolloutParserKeepsAutoReviewedMCPCallProcessing() async throws {
+        let tempDirectory = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        try FileManager.default.createDirectory(at: tempDirectory, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: tempDirectory) }
+
+        let threadId = "codex-auto-review-\(UUID().uuidString)"
+        let rolloutURL = tempDirectory.appendingPathComponent("rollout-\(threadId).jsonl")
+        let rollout = """
+        {"timestamp":"2026-08-21T12:00:00Z","type":"session_meta","payload":{"id":"\(threadId)","cwd":"/tmp/ping-island-project","originator":"codex-tui","source":"cli"}}
+        {"timestamp":"2026-08-21T12:00:01Z","type":"turn_context","payload":{"turn_id":"turn-1","cwd":"/tmp/ping-island-project","approval_policy":"on-request","approvals_reviewer":"auto_review"}}
+        {"timestamp":"2026-08-21T12:00:02Z","type":"event_msg","payload":{"type":"task_started"}}
+        {"timestamp":"2026-08-21T12:00:03Z","type":"response_item","payload":{"type":"function_call","name":"mcp__omx_state__state_get_status","arguments":"{}","call_id":"call-auto-review"}}
+        """
+        try rollout.write(to: rolloutURL, atomically: true, encoding: .utf8)
+
+        let snapshot = await CodexRolloutParser.shared.parseThread(
+            threadId: threadId,
+            fallbackCwd: "/tmp/ping-island-project",
+            clientInfo: SessionClientInfo(
+                kind: .codexCLI,
+                profileID: "codex-cli",
+                name: "Codex",
+                sessionFilePath: rolloutURL.path
+            )
+        )
+
+        XCTAssertEqual(snapshot?.phase, .processing)
+        XCTAssertNil(snapshot?.intervention)
     }
 
     func testRolloutParserDoesNotInferPendingMCPApprovalForCodexApp() async throws {

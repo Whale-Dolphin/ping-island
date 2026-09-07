@@ -10,6 +10,16 @@ final class AppLaunchConfigurationTests: XCTestCase {
         return defaults
     }
 
+    func testSharedTestProcessDetectionCoversUnitAndUITestProcesses() {
+        XCTAssertFalse(AppLaunchConfiguration.isTestProcess(environment: [:]))
+        XCTAssertTrue(AppLaunchConfiguration.isTestProcess(
+            environment: ["XCTestConfigurationFilePath": "/tmp/test.xctestconfiguration"]
+        ))
+        XCTAssertTrue(AppLaunchConfiguration.isTestProcess(
+            environment: ["PING_ISLAND_UI_TEST_MODE": "1"]
+        ))
+    }
+
     func testDefaultLaunchConfigurationMatchesProductionBehavior() {
         let configuration = AppLaunchConfiguration(environment: [:], isDebuggerAttached: false)
 

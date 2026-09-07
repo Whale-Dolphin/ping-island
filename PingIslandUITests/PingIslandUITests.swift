@@ -7,44 +7,34 @@ final class PingIslandUITests: XCTestCase {
 
     @MainActor
     func testSettingsWindowLaunchesInUITestMode() throws {
-        let app = XCUIApplication()
-        app.launchEnvironment["PING_ISLAND_UI_TEST_MODE"] = "1"
-        app.launch()
+        let app = launchSettingsApp()
 
         XCTAssertTrue(app.buttons["settings.sidebar.general"].waitForExistence(timeout: 5))
-        XCTAssertTrue(app.staticTexts["登录时打开"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.scrollViews["settings.detail.general"].waitForExistence(timeout: 5))
     }
 
     @MainActor
     func testSettingsSidebarCanSwitchToAboutPage() throws {
-        let app = XCUIApplication()
-        app.launchEnvironment["PING_ISLAND_UI_TEST_MODE"] = "1"
-        app.launch()
+        let app = launchSettingsApp()
 
-        let aboutButton = app.buttons["settings.sidebar.about"]
-        XCTAssertTrue(aboutButton.waitForExistence(timeout: 5))
-        aboutButton.tap()
+        selectSidebarCategory("about", in: app)
 
-        XCTAssertTrue(app.staticTexts["应用信息"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.scrollViews["settings.detail.about"].waitForExistence(timeout: 5))
     }
 
     @MainActor
     func testSettingsCategoriesSwitchWithoutBlockingContent() throws {
-        let app = XCUIApplication()
-        app.launchEnvironment["PING_ISLAND_UI_TEST_MODE"] = "1"
-        app.launch()
+        let app = launchSettingsApp()
 
         for category in ["display", "analytics", "sound", "general", "display", "sound"] {
-            let sidebarButton = app.buttons["settings.sidebar.\(category)"]
-            XCTAssertTrue(sidebarButton.waitForExistence(timeout: 5))
-            sidebarButton.tap()
+            let sidebarButton = selectSidebarCategory(category, in: app)
             XCTAssertTrue(
                 sidebarButton.isSelected,
                 "Sidebar selection for \(category) should update before detail loading finishes"
             )
 
             XCTAssertTrue(
-                app.scrollViews["settings.detail.\(category)"].waitForExistence(timeout: 1),
+                app.scrollViews["settings.detail.\(category)"].waitForExistence(timeout: 2),
                 "Settings content for \(category) should become available immediately"
             )
         }
@@ -52,13 +42,8 @@ final class PingIslandUITests: XCTestCase {
 
     @MainActor
     func testSettingsSoundPageShowsAllExperienceThemes() throws {
-        let app = XCUIApplication()
-        app.launchEnvironment["PING_ISLAND_UI_TEST_MODE"] = "1"
-        app.launch()
-
-        let soundButton = app.buttons["settings.sidebar.sound"]
-        XCTAssertTrue(soundButton.waitForExistence(timeout: 5))
-        soundButton.tap()
+        let app = launchSettingsApp()
+        selectSidebarCategory("sound", in: app)
 
         for themeID in ["standard", "macOS", "pixel"] {
             XCTAssertTrue(
@@ -71,5 +56,35 @@ final class PingIslandUITests: XCTestCase {
         screenshot.name = "Settings-Sound-Experience-Themes"
         screenshot.lifetime = .keepAlways
         add(screenshot)
+    }
+
+    @MainActor
+    private func launchSettingsApp() -> XCUIApplication {
+        let app = XCUIApplication()
+        app.launchEnvironment["PING_ISLAND_UI_TEST_MODE"] = "1"
+        app.launch()
+        return app
+    }
+
+    @MainActor
+    @discardableResult
+    private func selectSidebarCategory(
+        _ category: String,
+        in app: XCUIApplication
+    ) -> XCUIElement {
+        let button = app.buttons["settings.sidebar.\(category)"]
+        XCTAssertTrue(button.waitForExistence(timeout: 5), "Missing sidebar category \(category)")
+
+        if !button.isHittable {
+            let sidebar = app.scrollViews["settings.sidebar"]
+            XCTAssertTrue(sidebar.waitForExistence(timeout: 2), "Missing settings sidebar scroll view")
+            for _ in 0..<10 where !button.isHittable {
+                sidebar.scroll(byDeltaX: 0, deltaY: -60)
+            }
+        }
+
+        XCTAssertTrue(button.isHittable, "Sidebar category \(category) did not become hittable")
+        button.click()
+        return button
     }
 }

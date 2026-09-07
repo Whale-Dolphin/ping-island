@@ -17,10 +17,9 @@ struct AppLaunchConfiguration: Equatable {
         isDebuggerAttached _: Bool = Self.detectDebuggerAttached()
     ) {
         let isUITesting = environment["PING_ISLAND_UI_TEST_MODE"] == "1"
-        let isRunningUnderXCTest = environment["XCTestConfigurationFilePath"] != nil
         let shouldShowSettings = environment["PING_ISLAND_SHOW_SETTINGS_ON_LAUNCH"] == "1"
         let shouldAllowMultipleInstances = environment["PING_ISLAND_ALLOW_MULTIPLE_INSTANCES"] == "1"
-        let isRunningTests = isUITesting || isRunningUnderXCTest
+        let isRunningTests = Self.isTestProcess(environment: environment)
 
         self.isUITesting = isUITesting
         self.isRunningTests = isRunningTests
@@ -30,6 +29,13 @@ struct AppLaunchConfiguration: Equatable {
         self.shouldEnforceSingleInstance = !isRunningTests && !shouldAllowMultipleInstances
         self.shouldPresentSettingsWindowOnLaunch = isUITesting || shouldShowSettings
         self.activationPolicy = isUITesting ? .regular : .accessory
+    }
+
+    nonisolated static func isTestProcess(
+        environment: [String: String] = Foundation.ProcessInfo.processInfo.environment
+    ) -> Bool {
+        environment["PING_ISLAND_UI_TEST_MODE"] == "1"
+            || environment["XCTestConfigurationFilePath"] != nil
     }
 
     private static func detectDebuggerAttached() -> Bool {

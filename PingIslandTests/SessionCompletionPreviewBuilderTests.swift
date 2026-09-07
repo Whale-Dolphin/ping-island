@@ -46,6 +46,69 @@ final class SessionCompletionPreviewBuilderTests: XCTestCase {
         XCTAssertEqual(SessionCompletionPreviewBuilder.latestAssistantText(for: session), "最终 结果")
     }
 
+    func testFinalHookMessageWinsOverTrailingToolActivity() {
+        let session = SessionState(
+            sessionId: "remote-tool-tail",
+            cwd: "/synthetic/workspaces/results",
+            latestHookMessage: "Final answer",
+            phase: .waitingForInput,
+            chatItems: [
+                ChatHistoryItem(
+                    id: "tool",
+                    type: .toolCall(ToolCallItem(
+                        name: "Write", input: ["file_path": "/synthetic/workspaces/results/output.txt"],
+                        status: .success, result: "created", structuredResult: nil, subagentTools: []
+                    )),
+                    timestamp: Date(timeIntervalSince1970: 1)
+                )
+            ]
+        )
+        XCTAssertEqual(SessionCompletionPreviewBuilder.latestAssistantText(for: session), "Final answer")
+    }
+
+    func testAssistantReplyWinsOverTrailingThinkingActivity() {
+        let session = SessionState(
+            sessionId: "assistant-before-thinking",
+            cwd: "/synthetic/workspaces/results",
+            phase: .waitingForInput,
+            chatItems: [
+                ChatHistoryItem(id: "reply", type: .assistant("Final answer"), timestamp: Date(timeIntervalSince1970: 1)),
+                ChatHistoryItem(id: "thinking", type: .thinking("Internal activity"), timestamp: Date(timeIntervalSince1970: 2))
+            ]
+        )
+        XCTAssertEqual(SessionCompletionPreviewBuilder.latestAssistantText(for: session), "Final answer")
+    }
+
+    func testLatestUserBoundaryRejectsPriorReplyAndCachedSummary() {
+        let session = SessionState(
+            sessionId: "new-turn-no-result", cwd: "/synthetic/workspaces/preview",
+            previewText: "Previous answer", phase: .ended,
+            chatItems: [
+                ChatHistoryItem(id: "old-answer", type: .assistant("Previous answer"), timestamp: Date(timeIntervalSince1970: 1)),
+                ChatHistoryItem(id: "new-user", type: .user("New task"), timestamp: Date(timeIntervalSince1970: 2))
+            ],
+            conversationInfo: ConversationInfo(
+                summary: nil, lastMessage: "Previous answer", lastMessageRole: "assistant",
+                lastToolName: nil, firstUserMessage: "Old task", lastUserMessageDate: nil
+            )
+        )
+        XCTAssertEqual(SessionCompletionPreviewBuilder.latestUserText(for: session), "New task")
+        XCTAssertNil(SessionCompletionPreviewBuilder.latestAssistantText(for: session))
+    }
+
+    func testCurrentTurnActivityFallbackDoesNotCrossLatestUserBoundary() {
+        let session = SessionState(
+            sessionId: "new-turn-activity", cwd: "/synthetic/workspaces/preview",
+            previewText: "Previous answer", phase: .ended,
+            chatItems: [
+                ChatHistoryItem(id: "old-answer", type: .assistant("Previous answer"), timestamp: Date(timeIntervalSince1970: 1)),
+                ChatHistoryItem(id: "new-user", type: .user("New task"), timestamp: Date(timeIntervalSince1970: 2)),
+                ChatHistoryItem(id: "current-thinking", type: .thinking("Current turn activity"), timestamp: Date(timeIntervalSince1970: 3))
+            ]
+        )
+        XCTAssertEqual(SessionCompletionPreviewBuilder.latestAssistantText(for: session), "Current turn activity")
+    }
+
     func testCompactedNotificationSuppressesAssistantPreview() {
         let session = SessionState(
             sessionId: "completion-preview-compacted",

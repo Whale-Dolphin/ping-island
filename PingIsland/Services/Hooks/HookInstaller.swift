@@ -2111,6 +2111,7 @@ struct HookInstaller {
           "CMUX_SOCKET_PATH",
           "WINDOWSERVER_DISPLAY_UUID"
         ];
+        const IDLE_EVENT_DEDUP_MS = 1000;
 
         function isObject(value) {
           return value !== null && typeof value === "object" && !Array.isArray(value);
@@ -2342,6 +2343,25 @@ struct HookInstaller {
           return Object.keys(input).length > 0 ? input : undefined;
         }
 
+        function makeIdlePayload(rawSessionID) {
+          const session = getSession(rawSessionID);
+          const now = Date.now();
+          if (now - session.lastIdleEventAt < IDLE_EVENT_DEDUP_MS) {
+            return undefined;
+          }
+          session.lastIdleEventAt = now;
+
+          const payload = makeBasePayload(`opencode-${rawSessionID}`, {
+            hook_event_name: "Stop",
+            status: "idle",
+            cwd: session.cwd,
+            last_assistant_message: session.lastAssistantText || undefined,
+            session_title: session.pendingTitle || undefined
+          });
+          session.pendingTitle = undefined;
+          return payload;
+        }
+
         function mapEvent(event) {
           const type = event?.type;
           const properties = isObject(event?.properties) ? event.properties : {};
@@ -2395,16 +2415,14 @@ struct HookInstaller {
             const rawSessionID = stableString(properties.sessionID);
             const session = getSession(rawSessionID);
             if (properties.status?.type === "idle") {
-              const payload = makeBasePayload(`opencode-${rawSessionID}`, {
-                hook_event_name: "Stop",
-                cwd: session.cwd,
-                last_assistant_message: session.lastAssistantText || undefined,
-                session_title: session.pendingTitle || undefined
-              });
-              session.pendingTitle = undefined;
-              return payload;
+              return makeIdlePayload(rawSessionID);
             }
+            session.lastIdleEventAt = 0;
             return undefined;
+          }
+
+          if (type === "session.idle" && stableString(properties.sessionID)) {
+            return makeIdlePayload(stableString(properties.sessionID));
           }
 
           if (type === "message.updated" && isObject(properties.info) && stableString(properties.info.id) && stableString(properties.info.sessionID)) {
@@ -2431,6 +2449,7 @@ struct HookInstaller {
               if (!text) return undefined;
 
               if (meta.role === "user") {
+                session.lastIdleEventAt = 0;
                 session.lastUserText = text;
                 return makeBasePayload(sessionId, {
                   hook_event_name: "UserPromptSubmit",
@@ -2450,6 +2469,7 @@ struct HookInstaller {
               const toolInput = properties.part.state?.input;
               const state = stableString(properties.part.state?.status);
               if (state === "running" || state === "pending") {
+                session.lastIdleEventAt = 0;
                 return makeBasePayload(sessionId, {
                   hook_event_name: "PreToolUse",
                   cwd: session.cwd,
@@ -2560,7 +2580,8 @@ struct HookInstaller {
               cwd: undefined,
               lastUserText: "",
               lastAssistantText: "",
-              pendingTitle: undefined
+              pendingTitle: undefined,
+              lastIdleEventAt: 0
             });
           }
           return sessions.get(sessionID);
@@ -2677,9 +2698,19 @@ struct HookInstaller {
             return [:]
         }
 
-        let argsData = (try? JSONSerialization.data(withJSONObject: bridgeCommandArguments(for: profile), options: []))
+        let resolvedBridgeArguments = bridgeArguments ?? bridgeCommandArguments(for: profile)
+        let argsData = (try? JSONSerialization.data(
+            withJSONObject: resolvedBridgeArguments,
+            options: [.withoutEscapingSlashes]
+        ))
             ?? Data("[]".utf8)
         let argsJSON = String(data: argsData, encoding: .utf8) ?? "[]"
+        let environmentData = (try? JSONSerialization.data(
+            withJSONObject: bridgeEnvironment,
+            options: [.withoutEscapingSlashes]
+        ))
+            ?? Data("{}".utf8)
+        let environmentJSON = String(data: environmentData, encoding: .utf8) ?? "{}"
         let marker = managedMarker(for: profile)
 
         let pluginYAML = """
@@ -2713,6 +2744,7 @@ struct HookInstaller {
         import threading
 
         BRIDGE_ARGS = json.loads(r'''\(argsJSON)''')
+        BRIDGE_ENV = json.loads(r'''\(environmentJSON)''')
         ENV_KEYS = [
             "TERM_PROGRAM",
             "ITERM_SESSION_ID",
@@ -2886,6 +2918,7 @@ struct HookInstaller {
 
         def _spawn_bridge(payload):
             env = os.environ.copy()
+            env.update(BRIDGE_ENV)
             bridged_env = payload.pop("_env", None)
             tty = payload.pop("_tty", None)
             if isinstance(bridged_env, dict):

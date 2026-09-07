@@ -14,6 +14,7 @@ final class DetachedIslandWindowControllerTests: XCTestCase {
         let controller = DetachedIslandWindowController(
             viewModel: viewModel,
             sessionMonitor: sessionMonitor,
+            completionNotificationRegistry: SessionCompletionNotificationRegistry(),
             onClose: {}
         )
         defer { controller.dismiss() }
@@ -35,6 +36,7 @@ final class DetachedIslandWindowControllerTests: XCTestCase {
         let controller = DetachedIslandWindowController(
             viewModel: viewModel,
             sessionMonitor: sessionMonitor,
+            completionNotificationRegistry: SessionCompletionNotificationRegistry(),
             onClose: {}
         )
         defer { controller.dismiss() }
@@ -51,6 +53,7 @@ final class DetachedIslandWindowControllerTests: XCTestCase {
         let controller = DetachedIslandWindowController(
             viewModel: viewModel,
             sessionMonitor: sessionMonitor,
+            completionNotificationRegistry: SessionCompletionNotificationRegistry(),
             onClose: {}
         )
         defer { controller.dismiss() }
@@ -69,6 +72,7 @@ final class DetachedIslandWindowControllerTests: XCTestCase {
         let controller = DetachedIslandWindowController(
             viewModel: viewModel,
             sessionMonitor: sessionMonitor,
+            completionNotificationRegistry: SessionCompletionNotificationRegistry(),
             onClose: {}
         )
         defer { controller.dismiss() }
@@ -85,6 +89,7 @@ final class DetachedIslandWindowControllerTests: XCTestCase {
         let controller = DetachedIslandWindowController(
             viewModel: viewModel,
             sessionMonitor: sessionMonitor,
+            completionNotificationRegistry: SessionCompletionNotificationRegistry(),
             onClose: {}
         )
         defer { controller.dismiss() }
@@ -106,6 +111,7 @@ final class DetachedIslandWindowControllerTests: XCTestCase {
         let controller = DetachedIslandWindowController(
             viewModel: viewModel,
             sessionMonitor: sessionMonitor,
+            completionNotificationRegistry: SessionCompletionNotificationRegistry(),
             onClose: {},
             energyModePublisher: Empty<EnergyMode, Never>(completeImmediately: false).eraseToAnyPublisher()
         )
@@ -188,6 +194,7 @@ final class DetachedIslandWindowControllerTests: XCTestCase {
         let controller = DetachedIslandWindowController(
             viewModel: viewModel,
             sessionMonitor: sessionMonitor,
+            completionNotificationRegistry: SessionCompletionNotificationRegistry(),
             onClose: {}
         )
         defer { controller.dismiss() }
@@ -215,6 +222,7 @@ final class DetachedIslandWindowControllerTests: XCTestCase {
         let controller = DetachedIslandWindowController(
             viewModel: viewModel,
             sessionMonitor: sessionMonitor,
+            completionNotificationRegistry: SessionCompletionNotificationRegistry(),
             onClose: {}
         )
         defer { controller.dismiss() }
@@ -235,6 +243,7 @@ final class DetachedIslandWindowControllerTests: XCTestCase {
         let controller = DetachedIslandWindowController(
             viewModel: viewModel,
             sessionMonitor: sessionMonitor,
+            completionNotificationRegistry: SessionCompletionNotificationRegistry(),
             onClose: {}
         )
         defer { controller.dismiss() }
@@ -258,6 +267,7 @@ final class DetachedIslandWindowControllerTests: XCTestCase {
         let controller = DetachedIslandWindowController(
             viewModel: viewModel,
             sessionMonitor: sessionMonitor,
+            completionNotificationRegistry: SessionCompletionNotificationRegistry(),
             onClose: {}
         )
         defer { controller.dismiss() }
@@ -286,6 +296,7 @@ final class DetachedIslandWindowControllerTests: XCTestCase {
         let controller = DetachedIslandWindowController(
             viewModel: viewModel,
             sessionMonitor: sessionMonitor,
+            completionNotificationRegistry: SessionCompletionNotificationRegistry(),
             onClose: {}
         )
         defer {
@@ -312,6 +323,7 @@ final class DetachedIslandWindowControllerTests: XCTestCase {
         let controller = DetachedIslandWindowController(
             viewModel: viewModel,
             sessionMonitor: sessionMonitor,
+            completionNotificationRegistry: SessionCompletionNotificationRegistry(),
             onClose: {}
         )
         defer { controller.dismiss() }
@@ -667,7 +679,7 @@ final class DetachedIslandWindowControllerTests: XCTestCase {
         XCTAssertLessThan(manyHeight, 520)
     }
 
-    func testSessionListBubbleTreatsEndedSessionsAsMoreCompactRows() {
+    func testFloatingListGeometryExcludesIdleAndEndedRows() {
         let viewModel = makeViewModel()
         let activeOnly = [
             makeSession(id: "active-1", phase: .processing),
@@ -692,6 +704,9 @@ final class DetachedIslandWindowControllerTests: XCTestCase {
         ).height
 
         XCTAssertLessThan(mixedHeight, activeOnlyHeight)
+        XCTAssertEqual(mixedHeight, DetachedIslandContentModel.bubbleContentSize(
+            for: .sessionList, sessions: [mixed[0]], viewModel: viewModel
+        ).height)
     }
 
     func testAttentionBubbleUsesMeasuredHeightBeforeFallback() {
@@ -805,6 +820,7 @@ final class DetachedIslandWindowControllerTests: XCTestCase {
         let controller = DetachedIslandWindowController(
             viewModel: viewModel,
             sessionMonitor: sessionMonitor,
+            completionNotificationRegistry: SessionCompletionNotificationRegistry(),
             onClose: {}
         )
         defer { controller.dismiss() }
@@ -839,6 +855,7 @@ final class DetachedIslandWindowControllerTests: XCTestCase {
         let controller = DetachedIslandWindowController(
             viewModel: viewModel,
             sessionMonitor: sessionMonitor,
+            completionNotificationRegistry: SessionCompletionNotificationRegistry(),
             onClose: {}
         )
         defer { controller.dismiss() }
@@ -877,6 +894,7 @@ final class DetachedIslandWindowControllerTests: XCTestCase {
         let controller = DetachedIslandWindowController(
             viewModel: viewModel,
             sessionMonitor: sessionMonitor,
+            completionNotificationRegistry: SessionCompletionNotificationRegistry(),
             onClose: {}
         )
         defer { controller.dismiss() }
@@ -917,6 +935,7 @@ final class DetachedIslandWindowControllerTests: XCTestCase {
         let controller = DetachedIslandWindowController(
             viewModel: viewModel,
             sessionMonitor: sessionMonitor,
+            completionNotificationRegistry: SessionCompletionNotificationRegistry(),
             onClose: {}
         )
         defer { controller.dismiss() }
@@ -949,7 +968,7 @@ final class DetachedIslandWindowControllerTests: XCTestCase {
         wait(for: [bubblePresented], timeout: 1.0)
     }
 
-    func testCodexCompletionBubbleDoesNotAutoOpenWhileClaudeSessionIsActive() {
+    func testCodexCompletionBubbleQueuesUntilClaudeSessionFinishes() {
         let originalAutoOpenCompletionPanel = AppSettings.autoOpenCompletionPanel
         AppSettings.autoOpenCompletionPanel = true
         defer { AppSettings.autoOpenCompletionPanel = originalAutoOpenCompletionPanel }
@@ -970,6 +989,7 @@ final class DetachedIslandWindowControllerTests: XCTestCase {
         let controller = DetachedIslandWindowController(
             viewModel: viewModel,
             sessionMonitor: sessionMonitor,
+            completionNotificationRegistry: SessionCompletionNotificationRegistry(),
             onClose: {}
         )
         defer { controller.dismiss() }
@@ -977,9 +997,10 @@ final class DetachedIslandWindowControllerTests: XCTestCase {
         controller.present(atPetAnchor: CGPoint(x: 1200, y: 220))
         controller.applySessionSnapshotForTesting([activeClaude, codexCompleted])
 
-        let suppressed = expectation(description: "codex completion stays suppressed by active claude")
+        let suppressed = expectation(description: "codex completion remains queued while claude executes")
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) {
             XCTAssertNil(controller.currentActiveCompletionNotificationForTesting)
+            XCTAssertEqual(controller.pendingCompletionNotificationsForTesting.map(\.session), [codexCompleted])
             XCTAssertEqual(controller.renderedBubbleStateForTesting, .hidden)
             XCTAssertFalse(controller.isBubbleVisibleForTesting)
             suppressed.fulfill()
@@ -994,15 +1015,15 @@ final class DetachedIslandWindowControllerTests: XCTestCase {
             makeCodexCompletedSession(id: sessionId, lastActivity: activityAt)
         ])
 
-        let notReopened = expectation(description: "suppressed codex completion does not reopen later")
+        let presentedLater = expectation(description: "queued codex completion appears after execution stops")
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) {
-            XCTAssertNil(controller.currentActiveCompletionNotificationForTesting)
-            XCTAssertEqual(controller.renderedBubbleStateForTesting, .hidden)
-            XCTAssertFalse(controller.isBubbleVisibleForTesting)
-            notReopened.fulfill()
+            XCTAssertEqual(controller.currentActiveCompletionNotificationForTesting?.session, codexCompleted)
+            XCTAssertEqual(controller.renderedBubbleStateForTesting, .hoverPreview)
+            XCTAssertTrue(controller.isBubbleVisibleForTesting)
+            presentedLater.fulfill()
         }
 
-        wait(for: [notReopened], timeout: 1.0)
+        wait(for: [presentedLater], timeout: 1.0)
     }
 
     func testCodexCompletionBubbleDoesNotAutoOpenWhileAnotherCodexSessionIsActive() {
@@ -1034,6 +1055,7 @@ final class DetachedIslandWindowControllerTests: XCTestCase {
         let controller = DetachedIslandWindowController(
             viewModel: viewModel,
             sessionMonitor: sessionMonitor,
+            completionNotificationRegistry: SessionCompletionNotificationRegistry(),
             onClose: {}
         )
         defer { controller.dismiss() }
@@ -1041,9 +1063,10 @@ final class DetachedIslandWindowControllerTests: XCTestCase {
         controller.present(atPetAnchor: CGPoint(x: 1200, y: 220))
         controller.applySessionSnapshotForTesting([activeCodex, codexCompleted])
 
-        let suppressed = expectation(description: "codex completion stays suppressed by active codex")
+        let suppressed = expectation(description: "codex completion remains queued while another codex executes")
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) {
             XCTAssertNil(controller.currentActiveCompletionNotificationForTesting)
+            XCTAssertEqual(controller.pendingCompletionNotificationsForTesting.map(\.session), [codexCompleted])
             XCTAssertEqual(controller.renderedBubbleStateForTesting, .hidden)
             XCTAssertFalse(controller.isBubbleVisibleForTesting)
             suppressed.fulfill()
@@ -1069,6 +1092,7 @@ final class DetachedIslandWindowControllerTests: XCTestCase {
         let controller = DetachedIslandWindowController(
             viewModel: viewModel,
             sessionMonitor: sessionMonitor,
+            completionNotificationRegistry: SessionCompletionNotificationRegistry(),
             onClose: {}
         )
         controller.completionNotificationDismissDelay = 0.2
@@ -1126,6 +1150,7 @@ final class DetachedIslandWindowControllerTests: XCTestCase {
         let controller = DetachedIslandWindowController(
             viewModel: viewModel,
             sessionMonitor: sessionMonitor,
+            completionNotificationRegistry: SessionCompletionNotificationRegistry(),
             onClose: {}
         )
         controller.completionNotificationDismissDelay = 0.2
@@ -1199,6 +1224,7 @@ final class DetachedIslandWindowControllerTests: XCTestCase {
         let controller = DetachedIslandWindowController(
             viewModel: viewModel,
             sessionMonitor: sessionMonitor,
+            completionNotificationRegistry: SessionCompletionNotificationRegistry(),
             onClose: {}
         )
         defer { controller.dismiss() }
@@ -1252,6 +1278,7 @@ final class DetachedIslandWindowControllerTests: XCTestCase {
         let controller = DetachedIslandWindowController(
             viewModel: viewModel,
             sessionMonitor: sessionMonitor,
+            completionNotificationRegistry: SessionCompletionNotificationRegistry(),
             onClose: {}
         )
         controller.completionNotificationDismissDelay = 1.0
@@ -1294,6 +1321,7 @@ final class DetachedIslandWindowControllerTests: XCTestCase {
         let controller = DetachedIslandWindowController(
             viewModel: viewModel,
             sessionMonitor: sessionMonitor,
+            completionNotificationRegistry: SessionCompletionNotificationRegistry(),
             onClose: {}
         )
         defer { controller.dismiss() }
@@ -1320,6 +1348,7 @@ final class DetachedIslandWindowControllerTests: XCTestCase {
         let controller = DetachedIslandWindowController(
             viewModel: viewModel,
             sessionMonitor: sessionMonitor,
+            completionNotificationRegistry: SessionCompletionNotificationRegistry(),
             onClose: {}
         )
         defer { controller.dismiss() }
@@ -1350,12 +1379,15 @@ final class DetachedIslandWindowControllerTests: XCTestCase {
         let controller = DetachedIslandWindowController(
             viewModel: viewModel,
             sessionMonitor: sessionMonitor,
+            completionNotificationRegistry: SessionCompletionNotificationRegistry(),
             onClose: {}
         )
         controller.bubbleHoverGraceDelay = 0.1
         defer { controller.dismiss() }
 
-        controller.present(atPetAnchor: CGPoint(x: 1200, y: 220))
+        // Exercise the state/timer contract without showing an AppKit window.
+        // A real pointer entering the synthetic test frame would correctly cancel
+        // the grace timer and make this unit test depend on the user's mouse position.
         controller.simulatePetTapForTesting()
 
         let bubbleDismissed = expectation(description: "clicked bubble auto hides")
@@ -1376,6 +1408,7 @@ final class DetachedIslandWindowControllerTests: XCTestCase {
         let controller = DetachedIslandWindowController(
             viewModel: viewModel,
             sessionMonitor: sessionMonitor,
+            completionNotificationRegistry: SessionCompletionNotificationRegistry(),
             onClose: {}
         )
         controller.bubbleHoverGraceDelay = 0.1
@@ -1403,6 +1436,7 @@ final class DetachedIslandWindowControllerTests: XCTestCase {
         let controller = DetachedIslandWindowController(
             viewModel: viewModel,
             sessionMonitor: sessionMonitor,
+            completionNotificationRegistry: SessionCompletionNotificationRegistry(),
             onClose: {}
         )
         defer { controller.dismiss() }
@@ -1433,6 +1467,7 @@ final class DetachedIslandWindowControllerTests: XCTestCase {
         let controller = DetachedIslandWindowController(
             viewModel: viewModel,
             sessionMonitor: sessionMonitor,
+            completionNotificationRegistry: SessionCompletionNotificationRegistry(),
             onClose: {}
         )
         defer { controller.dismiss() }
@@ -1636,6 +1671,7 @@ final class DetachedIslandWindowControllerTests: XCTestCase {
         let controller = DetachedIslandWindowController(
             viewModel: viewModel,
             sessionMonitor: sessionMonitor,
+            completionNotificationRegistry: SessionCompletionNotificationRegistry(),
             onClose: {}
         )
         defer { controller.dismiss() }
@@ -1662,6 +1698,7 @@ final class DetachedIslandWindowControllerTests: XCTestCase {
         let controller = DetachedIslandWindowController(
             viewModel: viewModel,
             sessionMonitor: sessionMonitor,
+            completionNotificationRegistry: SessionCompletionNotificationRegistry(),
             onClose: {}
         )
         defer { controller.dismiss() }

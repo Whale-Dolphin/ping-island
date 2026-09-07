@@ -142,7 +142,9 @@ class SessionMonitor: ObservableObject {
             await runtimeCoordinator.start()
         }
         RemoteConnectorManager.shared.start(
-            onEvent: handleHookEvent,
+            onEvent: { [self] event in
+                await handleIncomingHookEvent(event)
+            },
             onCodexUsage: { [weak self] snapshot in
                 Task { @MainActor in
                     await self?.applyRemoteCodexUsageSnapshot(snapshot)
@@ -160,7 +162,8 @@ class SessionMonitor: ObservableObject {
 
     func handleIncomingHookEvent(_ event: HookEvent) async {
         let effectiveEvent: HookEvent
-        if await runtimeCoordinator.managesNativeSession(sessionID: event.sessionId, provider: event.provider) {
+        if event.ingress.usesLocalProcessNamespace,
+           await runtimeCoordinator.managesNativeSession(sessionID: event.sessionId, provider: event.provider) {
             effectiveEvent = event.withIngress(.nativeRuntime)
         } else {
             effectiveEvent = event
@@ -432,7 +435,8 @@ class SessionMonitor: ObservableObject {
 
     // MARK: - Permission Handling
 
-    func approvePermission(sessionId: String, forSession: Bool = false) {
+    @discardableResult
+    func approvePermission(sessionId: String, forSession: Bool = false) -> Task<Void, Never> {
         Task {
             guard let session = await SessionStore.shared.session(for: sessionId) else {
                 return
@@ -507,7 +511,8 @@ class SessionMonitor: ObservableObject {
         }
     }
 
-    func denyPermission(sessionId: String, reason: String?) {
+    @discardableResult
+    func denyPermission(sessionId: String, reason: String?) -> Task<Void, Never> {
         Task {
             guard let session = await SessionStore.shared.session(for: sessionId) else {
                 return
@@ -614,7 +619,8 @@ class SessionMonitor: ObservableObject {
         }
     }
 
-    func answerIntervention(sessionId: String, answers: [String: [String]]) {
+    @discardableResult
+    func answerIntervention(sessionId: String, answers: [String: [String]]) -> Task<Void, Never> {
         Task {
             guard let session = await SessionStore.shared.session(for: sessionId) else {
                 return
@@ -871,7 +877,7 @@ class SessionMonitor: ObservableObject {
 
     private func refreshVisibleSessions() {
         let visibleSessions = filteredVisibleSessions(from: allSessions)
-        let pendingSessions = visibleSessions.filter { $0.needsAttention }
+        let pendingSessions = visibleSessions.filter(\.needsManualAttention)
         recordNewAttentionRequests(in: pendingSessions)
         handleSessionSoundTransitions(visibleSessions)
         handleIdleReminderSound(visibleSessions)
@@ -939,7 +945,8 @@ class SessionMonitor: ObservableObject {
     /// notifying the user.
     private func shouldPlayNotificationSound(for sessions: [SessionState]) async -> Bool {
         for session in sessions {
-            guard let pid = session.pid else { return true }
+            guard session.ingress.usesLocalProcessNamespace,
+                  let pid = session.pid else { return true }
             if !(await TerminalVisibilityDetector.isSessionFocused(sessionPid: pid)) {
                 return true
             }
@@ -952,8 +959,9 @@ class SessionMonitor: ObservableObject {
         let primaryVisibleSessions = sessions.filter {
             !$0.shouldHideFromPrimaryUI && $0.shouldDisplaySubagent(in: visibilityMode)
         }
+        let processDeduplicatedSessions = Self.deduplicateSameLocalClaudeProcessSessions(primaryVisibleSessions)
         let dedupedSessions = SameWorkspaceSessionSupersession
-            .removingSupersededSessions(from: primaryVisibleSessions)
+            .removingSupersededSessions(from: processDeduplicatedSessions)
         return dedupedSessions.filter { candidate in
             guard shouldCheckDuplicateVisibility(for: candidate) else {
                 return true
@@ -963,6 +971,39 @@ class SessionMonitor: ObservableObject {
                 candidate.shouldHideAsDuplicateCodexPlaceholder(comparedTo: other)
                     || candidate.shouldHideAsDuplicateOpenCodeChildSession(comparedTo: other)
             }
+        }
+    }
+
+    /// Only a shared local Claude CLI PID proves that two IDs are one process.
+    /// Workspace activity never chooses between independent live sessions. Ties
+    /// use creation time then ID, not input ordering from a dictionary snapshot.
+    nonisolated static func deduplicateSameLocalClaudeProcessSessions(
+        _ sessions: [SessionState]
+    ) -> [SessionState] {
+        func localClaudePID(_ session: SessionState) -> Int? {
+            guard session.provider == .claude,
+                  session.ingress.usesLocalProcessNamespace,
+                  session.ingress != .nativeRuntime,
+                  session.clientInfo.isPlainClaudeCodeRouting,
+                  let pid = session.pid, pid > 0 else { return nil }
+            return pid
+        }
+        var newestByPID: [Int: SessionState] = [:]
+        for session in sessions {
+            guard let pid = localClaudePID(session) else { continue }
+            if let existing = newestByPID[pid] {
+                if existing.lastActivity > session.lastActivity { continue }
+                if existing.lastActivity == session.lastActivity {
+                    if existing.createdAt > session.createdAt { continue }
+                    if existing.createdAt == session.createdAt,
+                       existing.sessionId < session.sessionId { continue }
+                }
+            }
+            newestByPID[pid] = session
+        }
+        return sessions.filter { session in
+            guard let pid = localClaudePID(session) else { return true }
+            return newestByPID[pid]?.sessionId == session.sessionId
         }
     }
 
@@ -1376,9 +1417,12 @@ extension SessionMonitor: JSONLInterruptWatcherDelegate {
         }
     }
 
-    nonisolated func didObserveFileChange(sessionId: String) {
+    nonisolated func didObserveFileChange(sessionId: String, requiresImmediateSync: Bool) {
         Task {
-            await SessionStore.shared.requestFileSync(for: sessionId)
+            await SessionStore.shared.requestFileSync(
+                for: sessionId,
+                forceCodexRolloutParse: requiresImmediateSync
+            )
         }
     }
 }
