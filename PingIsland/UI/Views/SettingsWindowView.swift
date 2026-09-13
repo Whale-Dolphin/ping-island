@@ -7248,7 +7248,12 @@ private struct SoundEventSection<Content: View>: View {
 }
 
 private struct SoundStartupLine: View {
+    @ObservedObject private var settings = AppSettings.shared
     let preview: () -> Void
+
+    private var isPreviewEnabled: Bool {
+        settings.soundEnabled && !AppSettings.areReminderNotificationsSuppressed
+    }
 
     var body: some View {
         HStack(alignment: .center, spacing: 20) {
@@ -7279,7 +7284,7 @@ private struct SoundStartupLine: View {
 
             Spacer(minLength: 14)
 
-            SoundPreviewButton(isEnabled: true, action: preview)
+            SoundPreviewButton(isEnabled: isPreviewEnabled, action: preview)
         }
         .padding(.horizontal, 26)
         .padding(.vertical, 16)
