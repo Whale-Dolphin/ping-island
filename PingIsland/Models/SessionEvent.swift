@@ -633,7 +633,7 @@ extension HookEvent {
             return .idle
         }
 
-        // Codex App emits SessionStart as soon as a blank thread is created.
+        // ChatGPT emits SessionStart as soon as a blank thread is created.
         // That lifecycle event is not a request for user input; the following
         // UserPromptSubmit event will move the session into processing.
         if provider == .codex,

@@ -2,6 +2,35 @@ import XCTest
 @testable import Ping_Island
 
 final class HookSocketServerClientInfoTests: XCTestCase {
+    func testChatGPTMetadataKeepsDesktopBrandingAndLegacyThreadLinks() throws {
+        for metadata in [
+            ["client_originator": "ChatGPT"],
+            ["client_kind": "chatgpt", "client_name": "ChatGPT"],
+            ["client_originator": "Codex Desktop"]
+        ] {
+            let event = try decodeCodexEvent(
+                terminalContext: ["terminalBundleID": "com.aliyun.lingma.ide", "terminalProgram": "ChatGPT"],
+                metadata: metadata
+            )
+            XCTAssertEqual(event.clientInfo.kind, .codexApp)
+            XCTAssertEqual(event.clientInfo.badgeLabel(for: .codex), "ChatGPT")
+            XCTAssertEqual(event.clientInfo.bundleIdentifier, "com.openai.codex")
+            XCTAssertEqual(event.clientInfo.launchURL, "codex://threads/test-codex-identity")
+            XCTAssertNil(event.clientInfo.ideHostBadgeLabel(for: .codex))
+        }
+    }
+
+    func testChatGPTMetadataDoesNotOverrideActualTerminalSession() throws {
+        let event = try decodeCodexEvent(
+            terminalContext: ["terminalBundleID": "com.mitchellh.ghostty", "tty": "/dev/ttys009"],
+            metadata: ["client_originator": "ChatGPT", "client_name": "ChatGPT", "client_kind": "chatgpt"]
+        )
+        XCTAssertEqual(event.clientInfo.kind, .codexCLI)
+        XCTAssertEqual(event.clientInfo.name, "Codex CLI")
+        XCTAssertEqual(event.clientInfo.terminalBundleIdentifier, "com.mitchellh.ghostty")
+        XCTAssertNil(event.clientInfo.launchURL)
+    }
+
     func testCodexDesktopSourceIgnoresBareQoderHostHints() throws {
         for host in ["com.qoder.ide", "com.aliyun.lingma.ide"] {
             let event = try decodeCodexEvent(

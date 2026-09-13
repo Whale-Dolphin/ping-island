@@ -12,7 +12,7 @@ struct TerminalAppRegistry: Sendable {
     private nonisolated static let terminalDisplayNamesByBundleIdentifier: [String: String] = [
         "com.apple.terminal": "Terminal",
         "com.googlecode.iterm2": "iTerm2",
-        "com.openai.codex": "Codex",
+        "com.openai.codex": "ChatGPT",
         "com.mitchellh.ghostty": "Ghostty",
         "com.cmuxterm.app": "cmux",
         "io.alacritty": "Alacritty",
@@ -78,6 +78,7 @@ struct TerminalAppRegistry: Sendable {
         "iTerm2",
         "iTerm",
         "Codex",
+        "ChatGPT",
         "Ghostty",
         "cmux",
         "Alacritty",
@@ -237,6 +238,12 @@ struct TerminalAppRegistry: Sendable {
               !fallbackName.isEmpty,
               isTerminal(fallbackName) else {
             return nil
+        }
+        // Originators in older rollouts and remote snapshots are routing metadata.
+        // Migrate their displayed desktop name without changing that evidence.
+        if let desktopProfile = ClientProfileRegistry.runtimeProfile(id: "codex-app"),
+           desktopProfile.matchesLabelAlias(fallbackName) {
+            return desktopProfile.displayName
         }
         return fallbackName
     }

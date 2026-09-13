@@ -597,7 +597,7 @@ struct SessionState: Equatable, Identifiable, Sendable {
             || (conversationInfo.lastMessage?.isEmpty == false)
     }
 
-    /// Some Codex App continuation updates briefly appear as a new thread ID with only a shallow
+    /// Some ChatGPT continuation updates briefly appear as a new thread ID with only a shallow
     /// status preview (for example "working..."), but without any rollout path or durable history.
     /// We treat those as continuation placeholders so they can be rebound onto the richer thread.
     nonisolated var isLikelyTransientCodexContinuationPlaceholder: Bool {
@@ -844,8 +844,7 @@ struct SessionState: Equatable, Identifiable, Sendable {
         clientInfo.badgeLabel(for: provider)
     }
 
-    /// Message surfaces keep Codex App branding compact to avoid showing both
-    /// "Codex App" and "Codex" inside the same preview block.
+    /// Desktop message surfaces share the assistant label used by their previews.
     nonisolated var messageBadgeDisplayName: String {
         if provider == .codex, clientInfo.kind == .codexApp {
             return providerDisplayName

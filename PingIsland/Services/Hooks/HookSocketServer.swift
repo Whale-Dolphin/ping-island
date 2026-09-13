@@ -1235,7 +1235,7 @@ enum KimiAuxiliaryHookFilter {
 }
 
 struct CodexAuxiliaryHookFilter {
-    // These are Codex Desktop's task sources, not the text or JSON returned by a task.
+    // These are ChatGPT's task sources, not the text or JSON returned by a task.
     // In particular, ambient_suggestion_task is a user-created task and stays visible.
     private nonisolated static let auxiliaryThreadSources: Set<String> = [
         "thread_title",
@@ -1499,6 +1499,7 @@ class HookSocketServer {
             || normalizedKind?.contains("tui") == true
         let isExplicitDesktop = normalizedKind?.contains("app") == true
             || normalizedKind?.contains("desktop") == true
+            || normalizedKind == "chatgpt"
             || normalizedBundleID == "com.openai.codex"
             || SessionClientInfo(kind: .unknown, origin: origin, originator: originator).hasCodexDesktopSource
         let hasHostedTerminalBundle = normalizedTerminalBundleID != nil
@@ -1507,6 +1508,7 @@ class HookSocketServer {
             && normalizedIDEBundleID != "com.openai.codex"
         let hasHostedTerminalProgram = normalizedTerminalProgram != nil
             && normalizedTerminalProgram != "codex"
+            && normalizedTerminalProgram != "chatgpt"
             && inferredTerminalProgramBundleID != "com.openai.codex"
         let hasTerminalContext = hasContent(terminalTTY)
             || hasTerminalSession

@@ -2,6 +2,46 @@ import XCTest
 @testable import Ping_Island
 
 final class ClientProfileMatchingTests: XCTestCase {
+    func testLegacyDesktopAssociationsReloadAsChatGPTWithoutChangingIdentity() throws {
+        for legacyName in ["Codex App", "Codex Desktop", "codex_desktop", "Codex", "ChatGPT"] {
+            var association = PersistedSessionAssociation(session: SessionState(
+                sessionId: "desktop-rename", cwd: "/tmp/project", projectName: "project", provider: .codex,
+                clientInfo: .codexApp(threadId: "desktop-rename"), sessionName: "Keep my task title"
+            ))
+            association.clientInfo.name = legacyName
+            let stored = ["codex:desktop-rename": association]
+            let decoded = try JSONDecoder().decode(
+                [String: PersistedSessionAssociation].self, from: JSONEncoder().encode(stored)
+            )
+            let migrated = SessionAssociationStore.normalizedAssociations(decoded)
+            let restored = try XCTUnwrap(migrated["codex:desktop-rename"])
+            XCTAssertEqual(restored.clientInfo.name, "ChatGPT", legacyName)
+            XCTAssertEqual(restored.clientInfo.profileID, "codex-app")
+            XCTAssertEqual(restored.clientInfo.kind, .codexApp)
+            XCTAssertEqual(restored.clientInfo.bundleIdentifier, "com.openai.codex")
+            XCTAssertEqual(restored.clientInfo.launchURL, "codex://threads/desktop-rename")
+            XCTAssertEqual(restored.sessionName, "Keep my task title")
+            XCTAssertEqual(SessionAssociationStore.normalizedAssociations(migrated), migrated)
+        }
+    }
+
+    func testChatGPTOriginatorRepairsDesktopButPreservesRealTerminalRouting() {
+        var client = SessionClientInfo(
+            kind: .codexCLI, profileID: "codex-cli", name: "ChatGPT", origin: "cli",
+            originator: "ChatGPT", threadSource: "vscode", terminalBundleIdentifier: "com.aliyun.lingma.ide"
+        )
+        XCTAssertEqual(client.normalizedForCodexRouting().kind, .codexApp)
+        client.terminalTTY = "/dev/ttys007"
+        let cli = client.normalizedForCodexRouting()
+        XCTAssertEqual(cli.kind, .codexCLI)
+        XCTAssertEqual(cli.name, "Codex CLI")
+        XCTAssertEqual(cli.badgeLabel(for: .codex), "Codex")
+        XCTAssertEqual(cli.terminalBundleIdentifier, "com.aliyun.lingma.ide")
+        client.terminalTTY = nil
+        client.threadSource = "cli"
+        XCTAssertEqual(client.normalizedForCodexRouting().kind, .codexCLI)
+    }
+
     func testUnrelatedHostsDoNotMatchAnIDEProfile() {
         let hosts: [(String?, String?)] = [
             (nil, nil),
@@ -52,7 +92,7 @@ final class ClientProfileMatchingTests: XCTestCase {
         XCTAssertEqual(qoderCN.ideHostProfile?.id, "qoder-cn-extension")
 
         let clients: [(SessionProvider, SessionClientInfo, String)] = [
-            (.codex, .codexApp(threadId: "test-codex-thread"), "Codex App"),
+            (.codex, .codexApp(threadId: "test-codex-thread"), "ChatGPT"),
             (.claude, SessionClientInfo(
                 kind: .claudeCode,
                 profileID: "claude-code",
@@ -110,7 +150,7 @@ final class ClientProfileMatchingTests: XCTestCase {
         )
 
         XCTAssertEqual(repaired.profileID, "codex-app")
-        XCTAssertEqual(repaired.name, "Codex App")
+        XCTAssertEqual(repaired.name, "ChatGPT")
         XCTAssertEqual(repaired.bundleIdentifier, "com.openai.codex")
         XCTAssertNil(repaired.originator)
         XCTAssertNil(repaired.terminalBundleIdentifier)
@@ -132,7 +172,7 @@ final class ClientProfileMatchingTests: XCTestCase {
             )
             XCTAssertEqual(repaired.kind, .codexApp)
             XCTAssertEqual(repaired.profileID, "codex-app")
-            XCTAssertEqual(repaired.name, "Codex App")
+            XCTAssertEqual(repaired.name, "ChatGPT")
             XCTAssertEqual(repaired.launchURL, "codex://threads/\(sessionId)")
             XCTAssertNil(repaired.terminalBundleIdentifier)
             XCTAssertNil(repaired.originator)

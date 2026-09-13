@@ -563,7 +563,7 @@ final class SessionStateTests: XCTestCase {
         XCTAssertEqual(session.codexSubagentLevel, 1)
         XCTAssertTrue(session.isCodexSubagent)
         XCTAssertEqual(session.codexSubagentBadgeText, "SUBAGENT")
-        XCTAssertEqual(session.subagentClientTypeBadgeText, "Codex")
+        XCTAssertEqual(session.subagentClientTypeBadgeText, "ChatGPT")
         XCTAssertEqual(session.codexSubagentLabel, "Subagent · analyst · Avicenna")
     }
 
@@ -1516,7 +1516,7 @@ final class SessionStateTests: XCTestCase {
         XCTAssertEqual(session.terminalSourceBadgeLabel, "Ghostty")
     }
 
-    func testCodexAppMessageBadgeUsesProviderName() {
+    func testLegacyCodexAppUsesChatGPTAcrossMessageLabels() {
         let appSession = SessionState(
             sessionId: "codex-app-session",
             cwd: "/tmp/project",
@@ -1537,9 +1537,11 @@ final class SessionStateTests: XCTestCase {
             )
         )
 
-        XCTAssertEqual(appSession.clientDisplayName, "Codex App")
-        XCTAssertEqual(appSession.providerDisplayName, "Codex")
-        XCTAssertEqual(appSession.messageBadgeDisplayName, "Codex")
+        XCTAssertEqual(appSession.clientDisplayName, "ChatGPT")
+        XCTAssertEqual(appSession.providerDisplayName, "ChatGPT")
+        XCTAssertEqual(appSession.messageBadgeDisplayName, "ChatGPT")
+        XCTAssertEqual(appSession.interactionDisplayName, "ChatGPT")
+        XCTAssertEqual(appSession.clientInfo.subagentClientTypeLabel(for: .codex), "ChatGPT")
         XCTAssertEqual(cliSession.messageBadgeDisplayName, cliSession.clientDisplayName)
     }
 
@@ -1579,8 +1581,33 @@ final class SessionStateTests: XCTestCase {
             )
         )
 
-        XCTAssertEqual(session.messageBadgeDisplayName, "Codex")
+        XCTAssertEqual(session.messageBadgeDisplayName, "ChatGPT")
         XCTAssertNil(session.terminalSourceBadgeLabel)
+    }
+
+    func testLegacyDesktopOriginatorsDoNotLeakOldBrandingIntoSecondaryBadges() {
+        for originator in ["Codex Desktop", "Codex App", "ChatGPT"] {
+            var client = SessionClientInfo.codexApp(threadId: "desktop-originator")
+            client.originator = originator
+            let session = SessionState(
+                sessionId: "desktop-originator", cwd: "/tmp/project", provider: .codex, clientInfo: client
+            )
+            XCTAssertEqual(session.clientDisplayName, "ChatGPT")
+            XCTAssertEqual(session.interactionDisplayName, "ChatGPT")
+            XCTAssertNil(session.terminalSourceBadgeLabel, originator)
+        }
+    }
+
+    func testRemoteSnapshotKeepsLegacyRoutingMetadataWhileDisplayingChatGPT() {
+        let client = SessionClientInfo(
+            kind: .codexCLI, profileID: "codex-cli", name: "Codex CLI", origin: "cli",
+            originator: "Codex App", threadSource: "app-server", transport: "ssh", remoteHost: "devbox"
+        ).normalizedForCodexRouting()
+        XCTAssertEqual(client.kind, .codexCLI)
+        XCTAssertEqual(client.originator, "Codex App")
+        XCTAssertEqual(client.terminalSourceDisplayName, "ChatGPT")
+        XCTAssertEqual(client.interactionLabel(for: .codex), "ChatGPT")
+        XCTAssertFalse(client.prefersAppNavigation)
     }
 
     func testIDEHostedSessionsDoNotShowTerminalSourceBadge() {

@@ -58,7 +58,7 @@
   <img src="docs/images/mascots/copilot.gif" width="36" alt="GitHub Copilot mascot" title="GitHub Copilot">
 </p>
 <p align="center">
-  <sub>Claude Code · Codex · Gemini CLI · Antigravity CLI · Hermes Agent · Pi Agent · Oh My Pi · Qwen Code · Kimi CLI · OpenClaw · OpenCode · Cursor · Qoder IDE · Qoder CN IDE · CodeBuddy · GitHub Copilot</sub>
+  <sub>Claude Code · ChatGPT · Codex CLI · Gemini CLI · Antigravity CLI · Hermes Agent · Pi Agent · Oh My Pi · Qwen Code · Kimi CLI · OpenClaw · OpenCode · Cursor · Qoder IDE · Qoder CN IDE · CodeBuddy · GitHub Copilot</sub>
 </p>
 
 <a id="lets-try-it"></a>
@@ -160,7 +160,7 @@ Ping Island focuses on the moments that actually interrupt coding flow, then kee
 | Client | Ingress | Focus / return path | Island capabilities |
 | --- | --- | --- | --- |
 | Claude Code | Claude-compatible hooks through `PingIslandBridge` | Terminal.app, iTerm2, Ghostty, tmux, and IDE terminals | Tool approvals, AskUserQuestion replies, compaction alerts, completion popups, auto-approve |
-| Codex App + Codex CLI | Codex CLI hooks, live `codex app-server`, rollout parsing fallback | Codex app, terminal, tmux, and IDE terminals | Approval/input requests, live thread sync, usage snapshots, remote app-server forwarding |
+| ChatGPT + Codex CLI | Codex CLI hooks, live `codex app-server`, rollout parsing fallback | ChatGPT, terminal, tmux, and IDE terminals | Approval/input requests, live thread sync, usage snapshots, remote app-server forwarding |
 | Gemini CLI | Gemini CLI hooks in `~/.gemini/settings.json` | Compatible terminal hosts | Session lifecycle, tool activity, notifications, pre-compaction events |
 | Antigravity CLI | Generated native plugin under `~/.gemini/antigravity-cli/plugins/ping-island/` | Compatible terminal hosts and remote SSH sessions | Model invocation, tool activity, errors, and turn-stop status while preserving Antigravity's native permission prompts |
 | Hermes Agent | Official plugin hooks in `~/.hermes/plugins/ping_island/` | Hermes CLI terminal host | User prompts, tool activity, assistant replies, session-end notifications |

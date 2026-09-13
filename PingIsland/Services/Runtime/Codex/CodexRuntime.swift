@@ -131,8 +131,20 @@ actor CodexRuntime: SessionRuntime {
     }
 
     nonisolated private static func resolveCodexExecutable() -> String? {
+        for applicationPath in [
+            "/Applications/ChatGPT.app",
+            "\(NSHomeDirectory())/Applications/ChatGPT.app",
+            "/Applications/Codex.app",
+            "\(NSHomeDirectory())/Applications/Codex.app"
+        ] {
+            if let bundled = CodexAppServerMonitor.codexExecutable(
+                inApplicationAt: URL(fileURLWithPath: applicationPath, isDirectory: true)
+            ) {
+                return bundled
+            }
+        }
+
         let candidates = [
-            "/Applications/Codex.app/Contents/Resources/codex",
             "/opt/homebrew/bin/codex",
             "/usr/local/bin/codex",
             "/usr/bin/codex",

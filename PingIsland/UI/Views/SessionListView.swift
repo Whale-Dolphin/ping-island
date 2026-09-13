@@ -41,7 +41,7 @@ struct SessionListView: View {
                 .font(.system(size: 13, weight: .medium))
                 .foregroundColor(.white.opacity(0.4))
 
-            Text("Run Claude Code, Codex CLI, or Codex App")
+            Text("Run Claude Code, Codex CLI, or ChatGPT")
                 .font(.system(size: 11))
                 .foregroundColor(.white.opacity(0.25))
 

@@ -1,5 +1,18 @@
 # Codex session identity and auxiliary tasks
 
+## Desktop branding and compatibility
+
+The desktop client is displayed as **ChatGPT**. Its macOS bundle identifier remains
+`com.openai.codex`, its thread links remain `codex://threads/<id>`, and its bundled
+CLI is still named `codex`. Discovery prefers `ChatGPT.app` and retains `Codex.app`
+as a fallback, validating the bundle identity before using an embedded executable.
+Keep the persisted `codex-app` profile, `.codexApp` kind, Codex provider, and CLI
+identifiers stable. Old desktop names normalize to ChatGPT when associations load;
+legacy `Codex Desktop` originators remain supported alongside ChatGPT metadata.
+Source badges also display legacy desktop aliases as ChatGPT without rewriting
+raw originators, including remote CLI snapshots.
+Actual TTY, terminal session, and tmux evidence still preserve Codex CLI routing.
+
 ## Host evidence
 
 `HookPayloadMapper` recognizes Qoder and Qoder CN hosts from explicit bundle
@@ -9,7 +22,7 @@ IDE, regardless of whether its value is `1`, `0`, or another value. Parent-proce
 context capture remains in the bridge. Standalone terminals retain priority over
 unrelated IDE hints.
 
-`HookSocketServer` combines Codex desktop source metadata with actual terminal
+`HookSocketServer` combines ChatGPT desktop source metadata with actual terminal
 evidence. An IDE bundle alone cannot turn a known desktop session into a CLI
 session. A TTY, terminal program, terminal session identifier, or tmux context
 preserves real IDE-hosted CLI sessions. The optional `SessionClientInfo.terminalTTY`
@@ -25,7 +38,7 @@ source evidence rather than changing identity solely because they mention Qoder.
 
 `SessionStore.normalizedCodexClientInfo` reconciles new desktop evidence with both
 cached and live identities. Confirmed contaminated records receive the canonical
-Codex App profile and thread link, and lose the false Qoder terminal host and
+ChatGPT desktop profile and thread link, and lose the false Qoder terminal host and
 workspace URL. Real CLI terminal evidence is preserved. Session paths, remote
 transport, names of user tasks, and conversation state remain available.
 

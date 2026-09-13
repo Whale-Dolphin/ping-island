@@ -2,6 +2,12 @@ import XCTest
 @testable import Ping_Island
 
 final class TerminalAppRegistryTests: XCTestCase {
+    func testChatGPTAndLegacyCodexProcessNamesRemainRecognized() {
+        XCTAssertTrue(TerminalAppRegistry.isTerminal("/Applications/ChatGPT.app/Contents/MacOS/ChatGPT"))
+        XCTAssertTrue(TerminalAppRegistry.isTerminal("/Applications/Codex.app/Contents/MacOS/Codex"))
+        XCTAssertNil(TerminalAppRegistry.inferredBundleIdentifier(forTerminalProgram: "ChatGPT"))
+    }
+
     func testQoderIDEProcessNamesKeepLegacyAliases() {
         XCTAssertTrue(TerminalAppRegistry.isTerminal("/Applications/Qoder IDE.app/Contents/MacOS/Qoder"))
         XCTAssertTrue(TerminalAppRegistry.isTerminal("/Applications/Qoder CN.app/Contents/MacOS/Qoder CN"))
@@ -19,13 +25,13 @@ final class TerminalAppRegistryTests: XCTestCase {
         )
     }
 
-    func testExplicitCodexBundleStillResolvesCanonicalDisplayName() {
+    func testLegacyCodexBundleResolvesChatGPTDisplayName() {
         XCTAssertEqual(
             TerminalAppRegistry.canonicalDisplayName(
                 bundleIdentifier: "com.openai.codex",
                 program: nil
             ),
-            "Codex"
+            "ChatGPT"
         )
     }
 

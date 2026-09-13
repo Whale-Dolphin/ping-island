@@ -88,7 +88,7 @@ enum MascotClient: String, CaseIterable, Identifiable, Sendable {
         case .claude:
             return "Claude Hooks 与默认 Claude Code 会话"
         case .codex:
-            return "Codex App 与 Codex CLI"
+            return "ChatGPT 与 Codex CLI"
         case .gemini:
             return "Gemini CLI hooks 与默认 Gemini CLI 会话"
         case .hermes:

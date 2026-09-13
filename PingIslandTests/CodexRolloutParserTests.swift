@@ -224,7 +224,7 @@ final class CodexRolloutParserTests: XCTestCase {
 
         let clientInfo = try XCTUnwrap(snapshot?.clientInfo)
         XCTAssertEqual(clientInfo.profileID, "codex-app")
-        XCTAssertEqual(clientInfo.name, "Codex App")
+        XCTAssertEqual(clientInfo.name, "ChatGPT")
         XCTAssertEqual(clientInfo.bundleIdentifier, "com.openai.codex")
         XCTAssertEqual(clientInfo.originator, "Qoder CN IDE")
         XCTAssertNil(clientInfo.ideHostProfile)

@@ -1484,7 +1484,7 @@ actor CodexAppServerMonitor {
         guard !Self.shouldIgnoreAuxiliaryThread(thread) else { return nil }
 
         // Keep the approval-mode cache fresh: thread/read and thread/list both
-        // call this path, so any policy change made in Codex Desktop will be
+        // call this path, so any policy change made in ChatGPT will be
         // reflected within the next polling cycle (≤ 30 s).
         if let mode = thread["approvalMode"] as? String ?? thread["approval_mode"] as? String {
             threadApprovalModes[threadId] = mode
@@ -2017,10 +2017,17 @@ actor CodexAppServerMonitor {
     }
 
     private func resolveCodexExecutable() -> String? {
-        if let bundled = Self.codexExecutable(
-            inApplicationAt: URL(fileURLWithPath: "/Applications/Codex.app", isDirectory: true)
-        ) {
-            return bundled
+        for applicationPath in [
+            "/Applications/ChatGPT.app",
+            "\(NSHomeDirectory())/Applications/ChatGPT.app",
+            "/Applications/Codex.app",
+            "\(NSHomeDirectory())/Applications/Codex.app"
+        ] {
+            if let bundled = Self.codexExecutable(
+                inApplicationAt: URL(fileURLWithPath: applicationPath, isDirectory: true)
+            ) {
+                return bundled
+            }
         }
 
         for searchRoot in [

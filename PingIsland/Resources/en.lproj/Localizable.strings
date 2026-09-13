@@ -278,7 +278,7 @@
 "宇航员猫" = "Astronaut cat";
 "黑框眼镜机器人" = "Robot with black-rimmed glasses";
 "Claude Hooks 与默认 Claude Code 会话" = "Claude Hooks and default Claude Code sessions";
-"Codex App 与 Codex CLI" = "Codex App and Codex CLI";
+"ChatGPT 与 Codex CLI" = "ChatGPT and Codex CLI";
 "Gemini CLI hooks 与默认 Gemini CLI 会话" = "Gemini CLI hooks and default Gemini CLI sessions";
 "OpenCode 插件 hooks 会话" = "OpenCode plugin hook sessions";
 "Cursor IDE 中的 Claude 会话" = "Claude sessions inside Cursor";
@@ -313,7 +313,7 @@
 "Answer" = "Answer";
 
 "No sessions" = "No sessions";
-"Run Claude Code, Codex CLI, or Codex App" = "Run Claude Code, Codex CLI, or Codex App";
+"Run Claude Code, Codex CLI, or ChatGPT" = "Run Claude Code, Codex CLI, or ChatGPT";
 "你：" = "You:";
 "状态：" = "Status:";
 "需要你的输入" = "Needs your input";

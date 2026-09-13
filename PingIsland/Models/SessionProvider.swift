@@ -122,7 +122,7 @@ struct SessionClientInfo: Codable, Equatable, Sendable {
         case .claude:
             return SessionClientInfo(kind: .claudeCode, name: "Claude Code")
         case .codex:
-            return SessionClientInfo(kind: .codexApp, name: "Codex App", bundleIdentifier: "com.openai.codex")
+            return SessionClientInfo(kind: .codexApp, name: "ChatGPT", bundleIdentifier: "com.openai.codex")
         case .copilot:
             return SessionClientInfo(kind: .custom, profileID: "copilot-cli", name: "GitHub Copilot", origin: "cli")
         case .kimi:
@@ -138,7 +138,7 @@ struct SessionClientInfo: Codable, Equatable, Sendable {
         SessionClientInfo(
             kind: .codexApp,
             profileID: "codex-app",
-            name: "Codex App",
+            name: "ChatGPT",
             bundleIdentifier: "com.openai.codex",
             launchURL: appLaunchURL(bundleIdentifier: "com.openai.codex", sessionId: threadId),
             origin: "desktop"
@@ -377,7 +377,7 @@ struct SessionClientInfo: Codable, Equatable, Sendable {
         }
 
         if provider == .codex {
-            return provider.displayName
+            return kind == .codexApp ? assistantLabel(for: provider) : provider.displayName
         }
 
         if let profile = resolvedProfile(for: provider) {
@@ -609,7 +609,7 @@ struct SessionClientInfo: Codable, Equatable, Sendable {
             return true
         }
         if let program = terminalProgram?.nonEmpty,
-           program.lowercased() != "codex",
+           !["codex", "chatgpt"].contains(program.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()),
            TerminalAppRegistry.inferredBundleIdentifier(forTerminalProgram: program) != "com.openai.codex" {
             return true
         }
@@ -621,7 +621,8 @@ struct SessionClientInfo: Codable, Equatable, Sendable {
 
     nonisolated var hasCodexDesktopOriginator: Bool {
         let sourceName = originator?.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
-        return sourceName == "codex desktop" || sourceName == "codex_desktop"
+        return ["chatgpt", "chatgpt desktop", "chatgpt_desktop", "chatgpt-desktop",
+                "codex desktop", "codex_desktop"].contains(sourceName)
     }
 
     nonisolated var hasCodexDesktopSource: Bool {
@@ -641,6 +642,8 @@ struct SessionClientInfo: Codable, Equatable, Sendable {
 
     nonisolated func normalizedForCodexRouting(sessionId: String? = nil) -> SessionClientInfo {
         var normalized = self
+        let desktopProfile = ClientProfileRegistry.runtimeProfile(id: "codex-app")
+        let hasDesktopName = normalized.name.map { desktopProfile?.matchesLabelAlias($0) == true } ?? false
 
         let normalizedOrigin = normalized.origin?
             .trimmingCharacters(in: .whitespacesAndNewlines)
@@ -672,7 +675,7 @@ struct SessionClientInfo: Codable, Equatable, Sendable {
         switch normalized.kind {
         case .codexCLI:
             normalized.profileID = "codex-cli"
-            if normalized.name == nil || normalized.name == "Codex App" {
+            if normalized.name == nil || hasDesktopName {
                 normalized.name = "Codex CLI"
             }
 
@@ -698,8 +701,8 @@ struct SessionClientInfo: Codable, Equatable, Sendable {
                 }
             }
             normalized.profileID = "codex-app"
-            if normalized.name == nil || normalized.name == "Codex CLI" {
-                normalized.name = "Codex App"
+            if normalized.name == nil || hasDesktopName || normalized.name == "Codex" || normalized.name == "Codex CLI" {
+                normalized.name = desktopProfile?.displayName ?? "ChatGPT"
             }
 
             if normalized.bundleIdentifier == nil {

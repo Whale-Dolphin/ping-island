@@ -16,20 +16,25 @@ final class CodexAppServerMonitorTests: XCTestCase {
             XCTAssertNil(client.bundleIdentifier)
             XCTAssertNil(client.launchURL)
         }
-        let desktop = monitor.makeClientInfo(from: [
-            "source": "vscode", "originator": "Codex Desktop", "thread_source": "user"
-        ], threadId: "desktop-thread")
-        XCTAssertEqual(desktop.kind, .codexApp)
-        XCTAssertEqual(desktop.threadSource, "user")
-        XCTAssertEqual(desktop.launchURL, "codex://threads/desktop-thread")
+        for originator in ["ChatGPT", "Codex Desktop"] {
+            let desktop = monitor.makeClientInfo(from: [
+                "source": "vscode", "originator": originator, "thread_source": "user"
+            ], threadId: "desktop-thread")
+            XCTAssertEqual(desktop.kind, .codexApp)
+            XCTAssertEqual(desktop.threadSource, "user")
+            XCTAssertEqual(desktop.launchURL, "codex://threads/desktop-thread")
+        }
         let helper = monitor.makeClientInfo(from: ["thread_source": "thread_title"], threadId: "helper")
         XCTAssertEqual(helper.threadSource, "thread_title")
     }
 
-    private func makeTemporaryApplication(bundleIdentifier: String) throws -> URL {
+    private func makeTemporaryApplication(
+        bundleIdentifier: String,
+        name: String = "TestHost.app"
+    ) throws -> URL {
         let applicationURL = FileManager.default.temporaryDirectory
             .appendingPathComponent(UUID().uuidString, isDirectory: true)
-            .appendingPathComponent("TestHost.app", isDirectory: true)
+            .appendingPathComponent(name, isDirectory: true)
         let contentsURL = applicationURL.appendingPathComponent("Contents", isDirectory: true)
         let resourcesURL = contentsURL.appendingPathComponent("Resources", isDirectory: true)
         try FileManager.default.createDirectory(at: resourcesURL, withIntermediateDirectories: true)
@@ -79,7 +84,10 @@ final class CodexAppServerMonitorTests: XCTestCase {
     }
 
     func testBundledCodexDiscoveryRejectsExecutableFromUnrelatedIDE() throws {
-        let qoderApplication = try makeTemporaryApplication(bundleIdentifier: "com.aliyun.lingma.ide")
+        let qoderApplication = try makeTemporaryApplication(
+            bundleIdentifier: "com.aliyun.lingma.ide",
+            name: "ChatGPT.app"
+        )
         let codexApplication = try makeTemporaryApplication(bundleIdentifier: "com.openai.codex")
         defer {
             try? FileManager.default.removeItem(at: qoderApplication.deletingLastPathComponent())
@@ -95,6 +103,23 @@ final class CodexAppServerMonitorTests: XCTestCase {
                 .appendingPathComponent("codex")
                 .path
         )
+    }
+
+    func testBundledCodexDiscoverySupportsChatGPTAndLegacyCodexApplicationNames() throws {
+        for name in ["ChatGPT.app", "Codex.app"] {
+            let application = try makeTemporaryApplication(
+                bundleIdentifier: "com.openai.codex",
+                name: name
+            )
+            defer {
+                try? FileManager.default.removeItem(at: application.deletingLastPathComponent())
+            }
+
+            XCTAssertEqual(
+                CodexAppServerMonitor.codexExecutable(inApplicationAt: application),
+                application.appendingPathComponent("Contents/Resources/codex").path
+            )
+        }
     }
 
     func testWebSocketPayloadsEncodeAsTextJSON() throws {

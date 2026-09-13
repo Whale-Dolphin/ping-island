@@ -55,7 +55,7 @@
   <img src="docs/images/mascots/copilot.gif" width="36" alt="GitHub Copilot gif" title="GitHub Copilot">
 </p>
 <p align="center">
-  <sub>Claude Code · Codex · Gemini CLI · Hermes Agent · Pi Agent · Oh My Pi · Qwen Code · Kimi CLI · OpenClaw · OpenCode · Cursor · Qoder · CodeBuddy · GitHub Copilot</sub>
+  <sub>Claude Code · ChatGPT · Codex CLI · Gemini CLI · Hermes Agent · Pi Agent · Oh My Pi · Qwen Code · Kimi CLI · OpenClaw · OpenCode · Cursor · Qoder · CodeBuddy · GitHub Copilot</sub>
 </p>
 
 <a id="lets-try-it"></a>
@@ -162,7 +162,7 @@ Ping Island 关注的，是那些真正会打断编码节奏的时刻，并把�
 | 客户端 | 接入方式 | 跳转 / 聚焦路径 | Island 能力 |
 | --- | --- | --- | --- |
 | Claude Code | 通过 `PingIslandBridge` 接入 Claude 兼容 hooks | Terminal.app、iTerm2、Ghostty、tmux、IDE 内终端 | 工具审批、AskUserQuestion 回复、压缩提醒、完成弹窗、自动批准 |
-| Codex App + Codex CLI | Codex CLI hooks、实时 `codex app-server`、rollout 解析兜底 | Codex 应用、终端、tmux、IDE 内终端 | 审批 / 输入请求、线程同步、用量快照、远程 app-server 转发 |
+| ChatGPT + Codex CLI | Codex CLI hooks、实时 `codex app-server`、rollout 解析兜底 | ChatGPT、终端、tmux、IDE 内终端 | 审批 / 输入请求、线程同步、用量快照、远程 app-server 转发 |
 | Gemini CLI | `~/.gemini/settings.json` 中的 Gemini CLI hooks | 兼容终端宿主 | 会话生命周期、工具活动、通知、压缩前事件 |
 | Hermes Agent | `~/.hermes/plugins/ping_island/` 官方 plugin hooks | Hermes CLI 终端宿主 | 用户输入、工具活动、模型回复、会话结束通知 |
 | Pi Agent | `~/.pi/agent/extensions/ping_island/` 下的官方 extension | Pi Agent 终端宿主 | Extension 事件转发、客户端识别、终端云团宠物 |

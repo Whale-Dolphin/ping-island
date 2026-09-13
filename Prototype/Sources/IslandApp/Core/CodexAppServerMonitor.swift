@@ -164,9 +164,23 @@ actor CodexAppServerMonitor {
     }
 
     private func resolveCodexExecutable() -> String? {
-        let bundled = "/Applications/Codex.app/Contents/Resources/codex"
-        if FileManager.default.isExecutableFile(atPath: bundled) {
-            return bundled
+        for applicationPath in [
+            "/Applications/ChatGPT.app",
+            "\(NSHomeDirectory())/Applications/ChatGPT.app",
+            "/Applications/Codex.app",
+            "\(NSHomeDirectory())/Applications/Codex.app"
+        ] {
+            let applicationURL = URL(fileURLWithPath: applicationPath, isDirectory: true)
+            guard Bundle(url: applicationURL)?.bundleIdentifier?
+                .caseInsensitiveCompare("com.openai.codex") == .orderedSame else {
+                continue
+            }
+            let bundled = applicationURL
+                .appendingPathComponent("Contents/Resources/codex")
+                .path
+            if FileManager.default.isExecutableFile(atPath: bundled) {
+                return bundled
+            }
         }
         return ProcessInfo.processInfo.environment["PATH"]?
             .split(separator: ":")
