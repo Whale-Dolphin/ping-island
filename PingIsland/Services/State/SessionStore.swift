@@ -4087,9 +4087,15 @@ actor SessionStore {
         return incomingActivityAt < currentLastActivity
     }
 
-    func resolveCodexIntervention(sessionId: String, nextPhase: SessionPhase = .processing) {
+    func resolveCodexIntervention(
+        sessionId: String,
+        nextPhase: SessionPhase = .processing,
+        requestId: String? = nil
+    ) {
         let resolvedSessionId = resolveCodexSessionAlias(sessionId)
         guard var session = sessions[resolvedSessionId] else { return }
+        // Delayed replies may not clear a newer approval request.
+        if let requestId, session.intervention?.id != requestId { return }
         session.intervention = nil
         session.phase = nextPhase
         session.lastActivity = Date()

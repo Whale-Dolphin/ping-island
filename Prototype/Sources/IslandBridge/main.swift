@@ -1813,6 +1813,8 @@ private struct RemoteHookEventPayload: Codable {
     let notificationType: String?
     let message: String?
     let expectsResponse: Bool
+    let permissionMode: String?
+    let approvalsReviewer: String?
     let clientInfo: RemoteHookClientInfoPayload
 }
 
@@ -1864,6 +1866,8 @@ private enum RemoteBridgeMessageBuilder {
             notificationType: metadata["notification_type"],
             message: metadata["message"] ?? envelope.preview,
             expectsResponse: envelope.expectsResponse,
+            permissionMode: metadata["permission_mode"],
+            approvalsReviewer: metadata["approvals_reviewer"],
             clientInfo: RemoteHookClientInfoPayload(
                 kind: clientKind(for: envelope),
                 profileID: metadata["client_kind"],
@@ -1909,6 +1913,8 @@ private enum RemoteBridgeMessageBuilder {
             notificationType: nil,
             message: message,
             expectsResponse: false,
+            permissionMode: nil,
+            approvalsReviewer: nil,
             clientInfo: RemoteHookClientInfoPayload(
                 kind: "codexCLI",
                 profileID: "codex-cli",
@@ -1944,6 +1950,8 @@ private enum RemoteBridgeMessageBuilder {
             return .cancel
         case "answer":
             return .answer(BridgeAnswerPayload.extractAnswers(from: updatedInput))
+        case "defer":
+            return nil
         default:
             return nil
         }
