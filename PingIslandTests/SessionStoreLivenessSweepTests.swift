@@ -31,6 +31,32 @@ final class SessionStoreLivenessSweepTests: XCTestCase {
         await store.process(.sessionArchived(sessionId: id))
     }
 
+    func testStopDuringTranscriptEnrichmentPreservesCompletionLifecycle() async throws {
+        let id = "liveness-enrichment-stop-\(UUID().uuidString)"
+        let store = SessionStore.shared
+        await store.process(.hookReceived(makeClaudeEvent(sessionId: id, pid: nil)))
+        let captured = await store.session(for: id)
+        let original = try XCTUnwrap(captured)
+        var enriched = original
+        enriched.chatItems.append(ChatHistoryItem(
+            id: "late-final", type: .assistant("Done"), timestamp: Date()
+        ))
+
+        await store.process(.hookReceived(makeClaudeEvent(
+            sessionId: id,
+            pid: nil,
+            event: "Stop",
+            status: "waiting_for_input"
+        )))
+        let stoppedSession = await store.session(for: id)
+        let stopped = try XCTUnwrap(stoppedSession)
+        let committed = await store.commitTranscriptUpdate(enriched, basedOn: original)
+        XCTAssertEqual(committed?.phase, .waitingForInput)
+        XCTAssertEqual(committed?.completionSequence, stopped.completionSequence)
+        XCTAssertTrue(committed?.chatItems.contains(where: { $0.id == "late-final" }) == true)
+        await store.process(.sessionArchived(sessionId: id))
+    }
+
     func testArchiveDuringTranscriptEnrichmentDropsStaleUpdate() async throws {
         let id = "liveness-enrichment-archive-\(UUID().uuidString)"
         let store = SessionStore.shared
