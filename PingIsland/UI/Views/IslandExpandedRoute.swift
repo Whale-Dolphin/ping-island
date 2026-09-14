@@ -82,7 +82,8 @@ enum IslandExpandedRouteResolver {
 
     nonisolated static func activePreviewSessions(from sessions: [SessionState]) -> [SessionState] {
         orderedSessions(from: sessions).filter {
-            $0.phase.isActive || $0.phase == .waitingForInput || $0.isRecentlyCompleted
+            $0.isExecutionActive || $0.needsManualAttention
+                || ($0.connectionState == .connected && $0.needsPromptNotification)
         }
     }
 
