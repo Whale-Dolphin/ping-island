@@ -8,7 +8,6 @@ import Foundation
 nonisolated struct SessionCompletionKey: Hashable, Sendable {
     let sessionId: String
     let turnId: String
-    let completionSequence: UInt64
 
     nonisolated static func make(for session: SessionState) -> SessionCompletionKey? {
         guard SessionCompletionStateEvaluator.isCompletedReadySession(session) else {
@@ -24,8 +23,7 @@ nonisolated struct SessionCompletionKey: Hashable, Sendable {
 
         return SessionCompletionKey(
             sessionId: session.sessionId,
-            turnId: stableTurnId,
-            completionSequence: session.completionSequence
+            turnId: stableTurnId
         )
     }
 

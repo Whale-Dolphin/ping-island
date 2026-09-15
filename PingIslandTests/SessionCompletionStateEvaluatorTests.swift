@@ -35,6 +35,8 @@ final class SessionCompletionStateEvaluatorTests: XCTestCase {
         ))
         XCTAssertEqual(first, SessionCompletionKey.make(for: session))
         session.completionSequence += 1
+        XCTAssertEqual(first, SessionCompletionKey.make(for: session))
+        session.latestTurnId = "turn-2"
         XCTAssertNotEqual(first, SessionCompletionKey.make(for: session))
     }
 

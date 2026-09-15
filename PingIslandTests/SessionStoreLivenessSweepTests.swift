@@ -13,8 +13,10 @@ final class SessionStoreLivenessSweepTests: XCTestCase {
         let id = "liveness-enrichment-end-\(UUID().uuidString)"
         let store = SessionStore.shared
         await store.process(.hookReceived(makeClaudeEvent(sessionId: id, pid: nil)))
+        await store.process(.permissionAutoApprovalChanged(sessionId: id, isEnabled: true))
         let captured = await store.session(for: id)
         let original = try XCTUnwrap(captured)
+        XCTAssertTrue(original.autoApprovePermissions)
         var enriched = original
         enriched.chatItems.append(ChatHistoryItem(
             id: "enriched-final", type: .assistant("Final subagent result"), timestamp: Date()
@@ -26,8 +28,23 @@ final class SessionStoreLivenessSweepTests: XCTestCase {
         let ended = await store.session(for: id)
         let committed = await store.commitTranscriptUpdate(enriched, basedOn: original)
         XCTAssertEqual(committed?.phase, .ended)
+        XCTAssertEqual(committed?.autoApprovePermissions, false)
         XCTAssertEqual(committed?.lastActivity, ended?.lastActivity)
         XCTAssertTrue(committed?.chatItems.contains(where: { $0.id == "enriched-final" }) == true)
+        await store.process(.sessionArchived(sessionId: id))
+    }
+
+    func testPermissionToggleDuringTranscriptEnrichmentIsNotOverwritten() async throws {
+        let id = "liveness-permissions-\(UUID().uuidString)"
+        let store = SessionStore.shared
+        await store.process(.hookReceived(makeClaudeEvent(sessionId: id, pid: nil)))
+        for isEnabled in [true, false] {
+            let captured = await store.session(for: id)
+            let original = try XCTUnwrap(captured)
+            await store.process(.permissionAutoApprovalChanged(sessionId: id, isEnabled: isEnabled))
+            let committed = await store.commitTranscriptUpdate(original, basedOn: original)
+            XCTAssertEqual(committed?.autoApprovePermissions, isEnabled)
+        }
         await store.process(.sessionArchived(sessionId: id))
     }
 

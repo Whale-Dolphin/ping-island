@@ -2175,6 +2175,9 @@ actor SessionStore {
     func commitTranscriptUpdate(_ update: SessionState, basedOn original: SessionState) -> SessionState? {
         guard let latest = sessions[update.sessionId] else { return nil }
         var committed = update
+        // Transcript enrichment never owns the user's approval setting, even
+        // when the toggle changes without a corresponding phase transition.
+        committed.autoApprovePermissions = latest.autoApprovePermissions
         let lifecycleChangedWhileEnriching = latest.phase != original.phase
             || latest.intervention != original.intervention
             || latest.pendingInterventions != original.pendingInterventions
