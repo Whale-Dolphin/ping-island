@@ -35,6 +35,63 @@ func islandBridgeHealthCheckRoundTripsThroughSocketServer() async throws {
 }
 
 @Test
+func remoteAgentDefersCodexAutomaticReviewWithoutAllowingIt() async throws {
+    let executable = try TestRuntime.executableURL(named: "PingIslandBridge")
+    let socketID = UUID().uuidString.prefix(8)
+    let hookSocketPath = "/tmp/pi-\(socketID)-h.sock"
+    let controlSocketPath = "/tmp/pi-\(socketID)-c.sock"
+    let service = try RunningProcess(
+        executableURL: executable,
+        arguments: [
+            "--mode", "remote-agent-service",
+            "--hook-socket", hookSocketPath,
+            "--control-socket", controlSocketPath
+        ]
+    )
+    defer {
+        service.terminate()
+        _ = service.waitForExit()
+        try? FileManager.default.removeItem(atPath: hookSocketPath)
+        try? FileManager.default.removeItem(atPath: controlSocketPath)
+    }
+
+    try await waitUntil(description: "remote agent service should create sockets") {
+        FileManager.default.fileExists(atPath: hookSocketPath)
+            && FileManager.default.fileExists(atPath: controlSocketPath)
+    }
+    let control = try RemoteApprovalControlClient(socketPath: controlSocketPath)
+    try await control.readHello()
+    let hookRequest = Task.detached {
+        try TestSocketClient.send(
+            envelope: BridgeEnvelope(
+                provider: .codex,
+                eventType: "PermissionRequest",
+                sessionKey: "codex:remote-auto-review",
+                title: "Bash",
+                preview: "Run tests",
+                cwd: "/tmp/remote-auto-review",
+                status: SessionStatus(kind: .waitingForApproval),
+                expectsResponse: true,
+                metadata: [
+                    "session_id": "remote-auto-review",
+                    "tool_name": "Bash",
+                    "permission_mode": "default",
+                    "approvals_reviewer": "auto_review"
+                ]
+            ),
+            socketPath: hookSocketPath
+        )
+    }
+
+    let event = try await control.readHookEvent()
+    #expect(event.payload.permissionMode == "default")
+    #expect(event.payload.approvalsReviewer == "auto_review")
+    try await control.sendDefer(requestID: event.payload.requestID)
+    let response = try await hookRequest.value
+    #expect(response.decision == nil)
+}
+
+@Test
 func islandBridgeHealthCheckFailsWhenSocketIsUnavailable() throws {
     let executable = try TestRuntime.executableURL(named: "PingIslandBridge")
     let process = try RunningProcess(
@@ -375,63 +432,6 @@ func remoteAgentFailsOpenWhenNoControlClientIsAttached() async throws {
     #expect(response.decision == nil)
     #expect(response.updatedInput == nil)
     #expect(response.reason == nil)
-}
-
-@Test
-func remoteAgentDefersCodexAutomaticReviewWithoutAllowingIt() async throws {
-    let executable = try TestRuntime.executableURL(named: "PingIslandBridge")
-    let socketID = UUID().uuidString.prefix(8)
-    let hookSocketPath = "/tmp/pi-\(socketID)-h.sock"
-    let controlSocketPath = "/tmp/pi-\(socketID)-c.sock"
-    let service = try RunningProcess(
-        executableURL: executable,
-        arguments: [
-            "--mode", "remote-agent-service",
-            "--hook-socket", hookSocketPath,
-            "--control-socket", controlSocketPath
-        ]
-    )
-    defer {
-        service.terminate()
-        _ = service.waitForExit()
-        try? FileManager.default.removeItem(atPath: hookSocketPath)
-        try? FileManager.default.removeItem(atPath: controlSocketPath)
-    }
-
-    try await waitUntil(description: "remote agent service should create sockets") {
-        FileManager.default.fileExists(atPath: hookSocketPath)
-            && FileManager.default.fileExists(atPath: controlSocketPath)
-    }
-    let control = try RemoteApprovalControlClient(socketPath: controlSocketPath)
-    try await control.readHello()
-    let hookRequest = Task.detached {
-        try TestSocketClient.send(
-            envelope: BridgeEnvelope(
-                provider: .codex,
-                eventType: "PermissionRequest",
-                sessionKey: "codex:remote-auto-review",
-                title: "Bash",
-                preview: "Run tests",
-                cwd: "/tmp/remote-auto-review",
-                status: SessionStatus(kind: .waitingForApproval),
-                expectsResponse: true,
-                metadata: [
-                    "session_id": "remote-auto-review",
-                    "tool_name": "Bash",
-                    "permission_mode": "default",
-                    "approvals_reviewer": "auto_review"
-                ]
-            ),
-            socketPath: hookSocketPath
-        )
-    }
-
-    let event = try await control.readHookEvent()
-    #expect(event.payload.permissionMode == "default")
-    #expect(event.payload.approvalsReviewer == "auto_review")
-    try await control.sendDefer(requestID: event.payload.requestID)
-    let response = try await hookRequest.value
-    #expect(response.decision == nil)
 }
 
 @Test

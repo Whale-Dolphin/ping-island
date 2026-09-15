@@ -457,18 +457,29 @@ actor CodexAppServerMonitor {
         return ["answers": formattedAnswers]
     }
 
-    func readThread(threadId: String, includeTurns: Bool = true) async throws -> CodexThreadSnapshot {
-        if websocket == nil {
+    func readThread(
+        threadId: String,
+        includeTurns: Bool = true,
+        responseLoader: (@Sendable () async throws -> Data)? = nil
+    ) async throws -> CodexThreadSnapshot {
+        if websocket == nil, responseLoader == nil {
             await start()
         }
 
-        let response = try await sendRequest(
-            method: "thread/read",
-            params: [
-                "threadId": threadId,
-                "includeTurns": includeTurns
-            ]
-        )
+        let currentSession = await SessionStore.shared.session(for: threadId)
+        let readState = CodexThreadReadState(intervention: currentSession?.intervention)
+        let response: [String: Any]
+        if let responseLoader {
+            response = try JSONSerialization.jsonObject(with: await responseLoader()) as? [String: Any] ?? [:]
+        } else {
+            response = try await sendRequest(
+                method: "thread/read",
+                params: [
+                    "threadId": threadId,
+                    "includeTurns": includeTurns
+                ]
+            )
+        }
 
         guard let thread = response["thread"] as? [String: Any],
               let snapshot = parseThreadSnapshot(thread) else {
@@ -477,7 +488,7 @@ actor CodexAppServerMonitor {
             ])
         }
 
-        await SessionStore.shared.syncCodexThreadSnapshot(snapshot)
+        await SessionStore.shared.syncCodexThreadSnapshot(snapshot, readState: readState)
         return snapshot
     }
 
@@ -1569,10 +1580,11 @@ actor CodexAppServerMonitor {
         let updatedAt = lifecycleDates.updatedAt ?? createdAt
         let status = thread["status"] as? [String: Any]
         let snapshotClientInfo = makeClientInfo(from: thread, threadId: threadId)
+        let pendingIntervention = pendingRequestsByThread[threadId]?.intervention
         let phase = phaseFromCodexStatus(
             status,
             threadId: threadId,
-            intervention: pendingRequestsByThread[threadId]?.intervention
+            intervention: pendingIntervention
         )
         let turns = thread["turns"] as? [[String: Any]] ?? []
 
@@ -1587,7 +1599,9 @@ actor CodexAppServerMonitor {
         var latestFinalText: String?
         var latestFinalPhase: String?
         var latestTurnId: String?
-        var inferredIntervention: SessionIntervention?
+        // A thread/read reply can arrive after the next real server request.
+        // Pending requests are authoritative; transcript inference is secondary.
+        var inferredIntervention = pendingIntervention
         var itemOffset: TimeInterval = 0
         let subagentMetadata = parseSubagentMetadata(from: thread)
 
@@ -1659,7 +1673,7 @@ actor CodexAppServerMonitor {
                         )),
                         timestamp: timestamp
                     ))
-                    if toolStatus == .running,
+                    if inferredIntervention == nil, toolStatus == .running,
                        snapshotClientInfo.kind == .codexCLI,
                        !isAutoApproveThread(threadId),
                        !isAutomaticApprovalReviewThread(threadId) {
@@ -1710,7 +1724,7 @@ actor CodexAppServerMonitor {
             intervention: inferredIntervention,
             createdAt: createdAt,
             updatedAt: updatedAt,
-            phase: inferredIntervention != nil ? .waitingForInput : phase,
+            phase: pendingIntervention == nil && inferredIntervention != nil ? .waitingForInput : phase,
             historyItems: historyItems,
             conversationInfo: conversationInfo,
             latestTurnId: latestTurnId,

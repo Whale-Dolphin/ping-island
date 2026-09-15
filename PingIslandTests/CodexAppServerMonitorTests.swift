@@ -3,6 +3,78 @@ import XCTest
 @testable import Ping_Island
 
 final class CodexAppServerMonitorTests: XCTestCase {
+    func testThreadReadPreservesApprovalAndQuestionArrivingAfterResolution() async throws {
+        for method in ["item/commandExecution/requestApproval", "item/tool/requestUserInput"] {
+            let monitor = CodexAppServerMonitor()
+            let store = SessionStore.shared
+            let id = "refresh-request-\(UUID().uuidString)"
+            try await deliver([
+                "id": "r1", "method": "item/commandExecution/requestApproval",
+                "params": ["threadId": id, "command": ["printf", "first"]]
+            ], to: monitor)
+            try await deliver(["method": "serverRequest/resolved", "params": [
+                "threadId": id, "requestId": "r1"
+            ]], to: monitor)
+            let nextRequest = try JSONSerialization.data(withJSONObject: [
+                "id": "r2", "method": method, "params": [
+                    "threadId": id, "command": ["printf", "second"],
+                    "questions": [["id": "q1", "header": "Choice", "question": "Continue?", "options": []]]
+                ]
+            ])
+            let response = try JSONSerialization.data(withJSONObject: ["thread": [
+                "id": id, "cwd": "/tmp/codex-review", "source": "cli",
+                "status": ["type": "idle"], "turns": []
+            ]])
+
+            // Exercise readThread's real parse + Store commit, not the disconnected
+            // notification no-op. Only the RPC transport is replaced.
+            let snapshot = try await monitor.readThread(threadId: id, responseLoader: {
+                await monitor.handle(.data(nextRequest))
+                return response
+            })
+            XCTAssertEqual(snapshot.intervention?.id, "r2")
+            let session = await store.session(for: id)
+            XCTAssertEqual(session?.intervention?.id, "r2")
+            XCTAssertTrue(session?.needsPromptNotification == true)
+            if method == "item/tool/requestUserInput" {
+                XCTAssertEqual(session?.intervention?.kind, .question)
+                let answered = await monitor.answer(threadId: id, answers: ["q1": ["Yes"]])
+                XCTAssertTrue(answered)
+            } else {
+                XCTAssertEqual(session?.intervention?.kind, .approval)
+                await monitor.approve(threadId: id, forSession: false)
+            }
+            let resolved = await store.session(for: id)
+            XCTAssertNil(resolved?.intervention)
+            await monitor.stop()
+            await store.process(.sessionArchived(sessionId: id))
+        }
+    }
+
+    func testReadCommitCannotResurrectRequestResolvedAfterParsing() async throws {
+        let monitor = CodexAppServerMonitor()
+        let store = SessionStore.shared
+        let id = "refresh-resolved-\(UUID().uuidString)"
+        try await deliver([
+            "id": "r1", "method": "item/commandExecution/requestApproval",
+            "params": ["threadId": id, "command": ["printf", "first"]]
+        ], to: monitor)
+        let session = await store.session(for: id)
+        let readState = CodexThreadReadState(intervention: session?.intervention)
+        let parsed = await monitor.parseThreadSnapshot([
+            "id": id, "cwd": "/tmp/codex-review", "source": "cli",
+            "status": ["type": "active"], "turns": []
+        ])
+        let snapshot = try XCTUnwrap(parsed)
+        await monitor.deny(threadId: id)
+        await store.syncCodexThreadSnapshot(snapshot, readState: readState)
+        let resolved = await store.session(for: id)
+        XCTAssertNil(resolved?.intervention)
+        XCTAssertEqual(resolved?.phase, .processing)
+        await monitor.stop()
+        await store.process(.sessionArchived(sessionId: id))
+    }
+
     private func deliver(_ object: [String: Any], to monitor: CodexAppServerMonitor) async throws {
         let data = try JSONSerialization.data(withJSONObject: object)
         await monitor.handle(.data(data))
