@@ -787,10 +787,10 @@ final class RemoteConnectorManager: ObservableObject {
             codexUsageHandler?(snapshot)
 
         case .hookEvent(let eventMessage):
-            let payload = eventMessage.payload
             // Keep ACKs tied to the connection which delivered this event, even
             // when ingestion suspends long enough for a reconnect.
             let connector = connectors[endpointID]
+            let payload = eventMessage.payload
             guard let provider = SessionProvider(rawValue: payload.provider) else {
                 try? await Self.deliverRemoteHookEvent(nil, onEvent: eventHandler) {
                     try await connector?.acknowledgeIgnoredEvent(payload)

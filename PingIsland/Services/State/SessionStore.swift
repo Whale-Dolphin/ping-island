@@ -2787,7 +2787,7 @@ actor SessionStore {
             guard session.ingress.usesLocalProcessNamespace,
                   session.ingress != .nativeRuntime else { continue }
             guard session.phase != .ended else { continue }
-            guard !session.needsManualAttention else { continue }
+            guard !session.needsPromptNotification else { continue }
 
             let now = Date()
             let idleSeconds = now.timeIntervalSince(session.lastActivity)
@@ -2841,6 +2841,7 @@ actor SessionStore {
             guard session.ingress == .hookBridge else { continue }
             guard session.phase != .ended else { continue }
             guard session.pid == nil || session.pid == 0 else { continue }
+            guard !session.needsPromptNotification else { continue }
             guard pendingHookResponse(in: session) == nil else { continue }
             guard now.timeIntervalSince(session.lastActivity) >= Self.hookSessionIdleExpiry else {
                 continue
@@ -2905,6 +2906,7 @@ actor SessionStore {
         var removedAny = false
         for (sessionId, session) in Array(sessions) {
             let endedReap = session.phase == .ended
+            guard endedReap || !session.needsPromptNotification else { continue }
             let pidIsDead: Bool = {
                 guard session.ingress.usesLocalProcessNamespace,
                       let pid = session.pid, pid > 0 else { return false }

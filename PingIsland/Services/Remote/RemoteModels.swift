@@ -372,7 +372,6 @@ struct RemoteHookEventPayload: Codable, Sendable {
     let event: String
     let status: String
     let provider: String
-    let permissionMode: String?
     let pid: Int?
     let tty: String?
     let tool: String?
@@ -381,6 +380,7 @@ struct RemoteHookEventPayload: Codable, Sendable {
     let notificationType: String?
     let message: String?
     let expectsResponse: Bool
+    let permissionMode: String?
     let clientInfo: RemoteHookClientInfoPayload
 }
 

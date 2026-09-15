@@ -9,6 +9,35 @@ import XCTest
 /// sessions already in `.ended` phase.
 final class SessionStoreLivenessSweepTests: XCTestCase {
 
+    func testTerminalOnlyQuestionSurvivesSiblingAndLivenessCleanup() async throws {
+        let store = SessionStore.shared
+        for pid in [nil, 999_999] as [Int?] {
+            let id = "terminal-question-\(UUID().uuidString)"
+            let siblingID = "terminal-question-sibling-\(UUID().uuidString)"
+            await store.process(.hookReceived(makeClaudeEvent(sessionId: id, pid: pid)))
+            let captured = await store.session(for: id)
+            let original = try XCTUnwrap(captured)
+            var question = original
+            question.phase = .waitingForInput
+            question.suppressInAppPromptControls = true
+            question.lastActivity = Date().addingTimeInterval(-120)
+            _ = await store.commitTranscriptUpdate(question, basedOn: original)
+
+            await store.process(.hookReceived(makeClaudeEvent(sessionId: siblingID, pid: nil)))
+            await store.expireStaleHookSessions(now: Date().addingTimeInterval(3 * 60 * 60))
+            await store.pruneOrphanedSessions()
+            await store.sweepDeadOrEndedSessions()
+            let retained = await store.session(for: id)
+            XCTAssertEqual(retained?.phase, .waitingForInput)
+            XCTAssertTrue(retained?.needsPromptNotification == true)
+            await store.process(.sessionEnded(sessionId: id))
+            await store.sweepDeadOrEndedSessions()
+            let ended = await store.session(for: id)
+            XCTAssertNil(ended)
+            await store.process(.sessionArchived(sessionId: siblingID))
+        }
+    }
+
     func testSessionEndDuringTranscriptEnrichmentPreservesFinalContent() async throws {
         let id = "liveness-enrichment-end-\(UUID().uuidString)"
         let store = SessionStore.shared
