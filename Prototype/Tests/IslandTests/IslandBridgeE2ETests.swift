@@ -660,8 +660,8 @@ private struct TestRemoteHookEventPayload: Decodable {
     let cwd: String
     let status: String
     let provider: String
-    let message: String?
     let permissionMode: String?
+    let message: String?
     let approvalsReviewer: String?
     let clientInfo: TestRemoteHookClientInfoPayload
 }
