@@ -1805,6 +1805,7 @@ private struct RemoteHookEventPayload: Codable {
     let event: String
     let status: String
     let provider: String
+    let permissionMode: String?
     let pid: Int?
     let tty: String?
     let tool: String?
@@ -1813,7 +1814,6 @@ private struct RemoteHookEventPayload: Codable {
     let notificationType: String?
     let message: String?
     let expectsResponse: Bool
-    let permissionMode: String?
     let approvalsReviewer: String?
     let clientInfo: RemoteHookClientInfoPayload
 }
@@ -1858,6 +1858,7 @@ private enum RemoteBridgeMessageBuilder {
             event: envelope.eventType,
             status: mapStatus(eventType: envelope.eventType, status: envelope.status?.kind, notificationType: metadata["notification_type"]),
             provider: envelope.provider.rawValue,
+            permissionMode: metadata["permission_mode"],
             pid: Int(metadata["pid"] ?? "") ?? Int(getppid()),
             tty: terminalContext.tty,
             tool: normalizedToolName(metadata["tool_name"] ?? envelope.title),
@@ -1866,7 +1867,6 @@ private enum RemoteBridgeMessageBuilder {
             notificationType: metadata["notification_type"],
             message: metadata["message"] ?? envelope.preview,
             expectsResponse: envelope.expectsResponse,
-            permissionMode: metadata["permission_mode"],
             approvalsReviewer: metadata["approvals_reviewer"],
             clientInfo: RemoteHookClientInfoPayload(
                 kind: clientKind(for: envelope),
@@ -1905,6 +1905,7 @@ private enum RemoteBridgeMessageBuilder {
             // hooks remain authoritative for active and completed edges.
             status: "idle",
             provider: AgentProvider.codex.rawValue,
+            permissionMode: nil,
             pid: nil,
             tty: nil,
             tool: nil,
@@ -1913,7 +1914,6 @@ private enum RemoteBridgeMessageBuilder {
             notificationType: nil,
             message: message,
             expectsResponse: false,
-            permissionMode: nil,
             approvalsReviewer: nil,
             clientInfo: RemoteHookClientInfoPayload(
                 kind: "codexCLI",
