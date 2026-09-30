@@ -39,11 +39,11 @@ struct SessionListView: View {
         VStack(spacing: 8) {
             Text("No sessions")
                 .font(.system(size: 13, weight: .medium))
-                .foregroundColor(.white.opacity(0.4))
+                .foregroundColor(Color.islandForeground.opacity(0.4))
 
             Text("Run Claude Code, Codex CLI, or ChatGPT")
                 .font(.system(size: 11))
-                .foregroundColor(.white.opacity(0.25))
+                .foregroundColor(Color.islandForeground.opacity(0.25))
 
             if FeatureFlags.nativeClaudeRuntime || FeatureFlags.nativeCodexRuntime {
                 HStack(spacing: 8) {
@@ -51,7 +51,7 @@ struct SessionListView: View {
                         Button(action: { launchNativeRuntime(.claude) }) {
                             Text("Launch Claude Native")
                                 .font(.system(size: 11, weight: .semibold))
-                                .foregroundColor(.white.opacity(0.86))
+                                .foregroundColor(Color.islandForeground.opacity(0.86))
                                 .padding(.horizontal, 10)
                                 .padding(.vertical, 7)
                                 .background(nativeRuntimeTint(for: .claude).opacity(0.26))
@@ -64,7 +64,7 @@ struct SessionListView: View {
                         Button(action: { launchNativeRuntime(.codex) }) {
                             Text("Launch Codex Native")
                                 .font(.system(size: 11, weight: .semibold))
-                                .foregroundColor(.white.opacity(0.86))
+                                .foregroundColor(Color.islandForeground.opacity(0.86))
                                 .padding(.horizontal, 10)
                                 .padding(.vertical, 7)
                                 .background(nativeRuntimeTint(for: .codex).opacity(0.26))
@@ -396,7 +396,7 @@ struct SessionListView: View {
         case .codex:
             return Color(red: 0.34, green: 0.72, blue: 0.96)
         case .copilot:
-            return Color.white.opacity(0.5)
+            return Color.islandForeground.opacity(0.5)
         case .kimi:
             return Color(red: 0.96, green: 0.30, blue: 0.42)
         case .gemini:
@@ -548,12 +548,12 @@ private struct SubagentAttachmentRow: View {
 
     private var rowFill: Color {
         if isSelected {
-            return Color.white.opacity(isHovered ? 0.11 : 0.08)
+            return Color.islandForeground.opacity(isHovered ? 0.11 : 0.08)
         }
         if isHighlighted {
-            return Color.white.opacity(isHovered ? 0.09 : 0.06)
+            return Color.islandForeground.opacity(isHovered ? 0.09 : 0.06)
         }
-        return isHovered ? Color.white.opacity(0.055) : Color.clear
+        return isHovered ? Color.islandForeground.opacity(0.055) : Color.clear
     }
 
     var body: some View {
@@ -561,7 +561,7 @@ private struct SubagentAttachmentRow: View {
             VStack(alignment: .leading, spacing: 2) {
                 Text(title)
                     .font(.system(size: 12, weight: .semibold))
-                    .foregroundColor(.white.opacity(0.84))
+                    .foregroundColor(Color.islandForeground.opacity(0.84))
                     .lineLimit(1)
                     .truncationMode(.tail)
 
@@ -569,10 +569,10 @@ private struct SubagentAttachmentRow: View {
                     HStack(alignment: .firstTextBaseline, spacing: 4) {
                         Text("└")
                             .font(.system(size: 11, weight: .medium, design: .monospaced))
-                            .foregroundColor(.white.opacity(0.18))
+                            .foregroundColor(Color.islandForeground.opacity(0.18))
                         Text(detail)
                             .font(.system(size: 11, weight: .medium))
-                            .foregroundColor(.white.opacity(0.42))
+                            .foregroundColor(Color.islandForeground.opacity(0.42))
                             .lineLimit(1)
                             .truncationMode(.tail)
                     }
@@ -584,14 +584,14 @@ private struct SubagentAttachmentRow: View {
                 Text(ageLabel)
                     .font(.system(size: 10, weight: .semibold, design: .monospaced))
                     .monospacedDigit()
-                    .foregroundColor(.white.opacity(0.34))
+                    .foregroundColor(Color.islandForeground.opacity(0.34))
 
                 Text("SUBAGENT")
                     .font(.system(size: 7, weight: .semibold, design: .monospaced))
-                    .foregroundColor(.white.opacity(0.9))
+                    .foregroundColor(Color.islandForeground.opacity(0.9))
                     .padding(.horizontal, 5)
                     .padding(.vertical, 1)
-                    .background(Color.white.opacity(0.1))
+                    .background(Color.islandForeground.opacity(0.1))
                     .clipShape(Capsule())
             }
             .padding(.top, 1)
@@ -782,8 +782,8 @@ struct InstanceRow: View {
                     HStack(spacing: 6) {
                         metaBadge(
                             timeLabel,
-                            tint: Color.white.opacity(0.1),
-                            foreground: .white.opacity(0.64),
+                            tint: Color.islandForeground.opacity(0.1),
+                            foreground: Color.islandForeground.opacity(0.64),
                             fontDesign: .monospaced
                         )
                         metaBadge(providerLabel, tint: providerColor.opacity(0.2))
@@ -907,25 +907,25 @@ struct InstanceRow: View {
         if usesCodexSubagentTitleOnlyPresentation || session.shouldHideProjectContextInUI {
             return Text(usesCodexSubagentTitleOnlyPresentation ? session.titleOnlySubagentDisplayTitle : session.displayTitle)
                 .font(.system(size: sessionTitleFontSize, weight: .bold))
-                .foregroundColor(.white)
+                .foregroundColor(Color.islandForeground)
         }
 
         return Text(session.projectName)
             .font(.system(size: projectTitleFontSize, weight: .semibold))
-            .foregroundColor(.white.opacity(0.84))
+            .foregroundColor(Color.islandForeground.opacity(0.84))
         + Text(" · ")
             .font(.system(size: projectTitleFontSize, weight: .bold))
-            .foregroundColor(.white.opacity(0.34))
+            .foregroundColor(Color.islandForeground.opacity(0.34))
         + Text(session.displayTitle)
             .font(.system(size: sessionTitleFontSize, weight: .bold))
-            .foregroundColor(.white)
+            .foregroundColor(Color.islandForeground)
     }
 
     @ViewBuilder
     private var avatarView: some View {
         ZStack(alignment: .bottomTrailing) {
             RoundedRectangle(cornerRadius: 10, style: .continuous)
-                .fill(Color.white.opacity(0.04))
+                .fill(Color.islandForeground.opacity(0.04))
 
             MascotView(
                 kind: settings.mascotKind(for: session.mascotClient),
@@ -946,9 +946,9 @@ struct InstanceRow: View {
         if session.connectionState == .disconnected {
             Image(systemName: "wifi.slash")
                 .font(.system(size: 7, weight: .bold))
-                .foregroundColor(Color.white.opacity(0.56))
+                .foregroundColor(Color.islandForeground.opacity(0.56))
                 .frame(width: 14, height: 14)
-                .background(Color.black.opacity(0.92))
+                .background(Color.islandSurface.opacity(0.92))
                 .clipShape(Circle())
                 .help(AppLocalization.string("远程连接已断开"))
         } else {
@@ -961,7 +961,7 @@ struct InstanceRow: View {
                     .frame(width: 10, height: 10)
                     .overlay(
                         Circle()
-                            .strokeBorder(Color.black.opacity(0.8), lineWidth: 2)
+                            .strokeBorder(Color.islandSurface.opacity(0.8), lineWidth: 2)
                     )
             case .idle, .ended:
                 EmptyView()
@@ -986,7 +986,7 @@ struct InstanceRow: View {
             .font(.system(size: 8, weight: .black))
             .foregroundColor(statusAccentColor)
             .frame(width: 14, height: 14)
-            .background(Color.black.opacity(0.92))
+            .background(Color.islandSurface.opacity(0.92))
             .clipShape(Circle())
             .overlay(
                 Circle()
@@ -1020,7 +1020,7 @@ struct InstanceRow: View {
         case .waitingForInput:
             return TerminalColors.green
         case .idle, .ended:
-            return Color.white.opacity(0.28)
+            return Color.islandForeground.opacity(0.28)
         case .waitingForApproval:
             return TerminalColors.amber
         }
@@ -1034,11 +1034,11 @@ struct InstanceRow: View {
         if session.ideHostBadgeLabel?.contains("Qoder") == true {
             return Color(red: 0.12, green: 0.88, blue: 0.56).opacity(0.2)
         }
-        return Color.white.opacity(0.1)
+        return Color.islandForeground.opacity(0.1)
     }
 
     private var terminalBadgeTint: Color {
-        Color.white.opacity(0.1)
+        Color.islandForeground.opacity(0.1)
     }
 
     private enum SupplementaryBadge {
@@ -1050,16 +1050,16 @@ struct InstanceRow: View {
         if showsNativeRuntimeBadge {
             return .text(
                 "NATIVE",
-                tint: Color.white.opacity(0.12),
-                foreground: .white.opacity(0.92),
+                tint: Color.islandForeground.opacity(0.12),
+                foreground: Color.islandForeground.opacity(0.92),
                 fontDesign: .monospaced
             )
         }
         if let codexSubagentBadgeText = session.codexSubagentBadgeText {
             return .text(
                 codexSubagentBadgeText,
-                tint: Color.white.opacity(0.12),
-                foreground: .white.opacity(0.9),
+                tint: Color.islandForeground.opacity(0.12),
+                foreground: Color.islandForeground.opacity(0.9),
                 fontDesign: .monospaced
             )
         }
@@ -1070,7 +1070,7 @@ struct InstanceRow: View {
             return .text(
                 ideHostBadgeLabel,
                 tint: ideHostBadgeTint,
-                foreground: .white.opacity(0.9),
+                foreground: Color.islandForeground.opacity(0.9),
                 fontDesign: .default
             )
         }
@@ -1078,7 +1078,7 @@ struct InstanceRow: View {
             return .text(
                 terminalSourceLabel,
                 tint: terminalBadgeTint,
-                foreground: .white.opacity(0.9),
+                foreground: Color.islandForeground.opacity(0.9),
                 fontDesign: .default
             )
         }
@@ -1093,7 +1093,7 @@ struct InstanceRow: View {
             if isWaitingForApproval {
                 return TerminalColors.amber.opacity(isHovered ? 0.22 : 0.17)
             }
-            return Color.white.opacity(isHovered ? 0.14 : 0.11)
+            return Color.islandForeground.opacity(isHovered ? 0.14 : 0.11)
         }
         if isHighlighted {
             if session.needsQuestionResponse {
@@ -1102,7 +1102,7 @@ struct InstanceRow: View {
             if isWaitingForApproval {
                 return TerminalColors.amber.opacity(isHovered ? 0.2 : 0.15)
             }
-            return Color.white.opacity(isHovered ? 0.11 : 0.08)
+            return Color.islandForeground.opacity(isHovered ? 0.11 : 0.08)
         }
         if isExpanded {
             if session.needsQuestionResponse {
@@ -1111,7 +1111,7 @@ struct InstanceRow: View {
             if isWaitingForApproval {
                 return TerminalColors.amber.opacity(isHovered ? 0.18 : 0.13)
             }
-            return Color.white.opacity(isHovered ? 0.1 : 0.07)
+            return Color.islandForeground.opacity(isHovered ? 0.1 : 0.07)
         }
         if session.needsQuestionResponse {
             return TerminalColors.blue.opacity(isHovered ? 0.16 : 0.11)
@@ -1120,9 +1120,9 @@ struct InstanceRow: View {
             return TerminalColors.amber.opacity(isHovered ? 0.15 : 0.09)
         }
         if session.isExecutionActive {
-            return Color.white.opacity(isHovered ? 0.08 : 0.04)
+            return Color.islandForeground.opacity(isHovered ? 0.08 : 0.04)
         }
-        return isHovered ? Color.white.opacity(0.06) : Color.clear
+        return isHovered ? Color.islandForeground.opacity(0.06) : Color.clear
     }
 
     private var rowBorderColor: Color {
@@ -1142,7 +1142,7 @@ struct InstanceRow: View {
             if isWaitingForApproval {
                 return TerminalColors.amber.opacity(0.3)
             }
-            return Color.white.opacity(isHovered ? 0.2 : 0.16)
+            return Color.islandForeground.opacity(isHovered ? 0.2 : 0.16)
         }
         if isExpanded {
             if session.needsQuestionResponse {
@@ -1151,7 +1151,7 @@ struct InstanceRow: View {
             if isWaitingForApproval {
                 return TerminalColors.amber.opacity(0.26)
             }
-            return Color.white.opacity(isHovered ? 0.16 : 0.12)
+            return Color.islandForeground.opacity(isHovered ? 0.16 : 0.12)
         }
         if session.needsQuestionResponse {
             return TerminalColors.blue.opacity(0.16)
@@ -1159,7 +1159,7 @@ struct InstanceRow: View {
         if isWaitingForApproval {
             return TerminalColors.amber.opacity(0.16)
         }
-        return Color.white.opacity(isHovered ? 0.08 : 0.04)
+        return Color.islandForeground.opacity(isHovered ? 0.08 : 0.04)
     }
 
     private var shouldShowExpandedDetails: Bool {
@@ -1171,8 +1171,8 @@ struct InstanceRow: View {
         HStack(spacing: 5) {
             metaBadge(
                 timeLabel,
-                tint: Color.white.opacity(0.08),
-                foreground: .white.opacity(0.6),
+                tint: Color.islandForeground.opacity(0.08),
+                foreground: Color.islandForeground.opacity(0.6),
                 fontDesign: .monospaced,
                 compact: true
             )
@@ -1180,7 +1180,7 @@ struct InstanceRow: View {
             metaBadge(
                 providerLabel,
                 tint: providerColor.opacity(0.18),
-                foreground: .white.opacity(0.86),
+                foreground: Color.islandForeground.opacity(0.86),
                 compact: true
             )
             if let primarySupplementaryBadge {
@@ -1196,7 +1196,7 @@ struct InstanceRow: View {
                 metaBadge(
                     subagentClientTypeBadgeText,
                     tint: providerColor.opacity(0.18),
-                    foreground: .white.opacity(0.86),
+                    foreground: Color.islandForeground.opacity(0.86),
                     compact: true
                 )
             }
@@ -1204,8 +1204,8 @@ struct InstanceRow: View {
             if let codexSubagentBadgeText = session.codexSubagentBadgeText {
                 metaBadge(
                     codexSubagentBadgeText,
-                    tint: Color.white.opacity(0.12),
-                    foreground: .white.opacity(0.9),
+                    tint: Color.islandForeground.opacity(0.12),
+                    foreground: Color.islandForeground.opacity(0.9),
                     fontDesign: .monospaced,
                     compact: true
                 )
@@ -1257,9 +1257,9 @@ struct InstanceRow: View {
                 QueuePreviewLine(
                     id: "user",
                     prefix: AppLocalization.string("你："),
-                    prefixColor: .white.opacity(0.52),
+                    prefixColor: Color.islandForeground.opacity(0.52),
                     text: userLine,
-                    textColor: .white.opacity(0.62)
+                    textColor: Color.islandForeground.opacity(0.62)
                 )
             )
         }
@@ -1281,9 +1281,9 @@ struct InstanceRow: View {
                 QueuePreviewLine(
                     id: "fallback",
                     prefix: AppLocalization.string("状态："),
-                    prefixColor: .white.opacity(0.48),
+                    prefixColor: Color.islandForeground.opacity(0.48),
                     text: fallback,
-                    textColor: .white.opacity(0.56)
+                    textColor: Color.islandForeground.opacity(0.56)
                 )
             )
         }
@@ -1313,15 +1313,15 @@ struct InstanceRow: View {
 
     private var assistantTextColor: Color {
         if session.needsQuestionResponse {
-            return .white.opacity(0.88)
+            return Color.islandForeground.opacity(0.88)
         }
         if isWaitingForApproval {
-            return .white.opacity(0.74)
+            return Color.islandForeground.opacity(0.74)
         }
         if session.isExecutionActive {
-            return .white.opacity(0.66)
+            return Color.islandForeground.opacity(0.66)
         }
-        return .white.opacity(0.52)
+        return Color.islandForeground.opacity(0.52)
     }
 
     private var latestUserLine: String? {
@@ -1405,10 +1405,10 @@ struct InstanceRow: View {
                     } label: {
                         Text(verbatim: AppLocalization.format("打开 %@", interactionLabel))
                             .font(.system(size: 10, weight: .semibold))
-                            .foregroundColor(.black)
+                            .foregroundColor(Color.islandSurface)
                             .padding(.horizontal, 8)
                             .padding(.vertical, 4)
-                            .background(Color.white.opacity(0.9))
+                            .background(Color.islandForeground.opacity(0.9))
                             .clipShape(Capsule())
                     }
                     .buttonStyle(.plain)
@@ -1458,7 +1458,7 @@ struct InstanceRow: View {
     private func metaBadge(
         _ text: String,
         tint: Color,
-        foreground: Color = .white.opacity(0.92),
+        foreground: Color = Color.islandForeground.opacity(0.92),
         fontDesign: Font.Design = .default,
         compact: Bool = false
     ) -> some View {
@@ -1475,13 +1475,13 @@ struct InstanceRow: View {
     private func remoteSessionBadge(compact: Bool = false) -> some View {
         Image(systemName: "cloud.fill")
             .font(.system(size: compact ? 8 : 9, weight: .semibold))
-            .foregroundColor(.white.opacity(0.9))
+            .foregroundColor(Color.islandForeground.opacity(0.9))
             .frame(width: compact ? 18 : 20, height: compact ? 18 : 20)
             .background(Color(red: 0.42, green: 0.70, blue: 0.98).opacity(compact ? 0.22 : 0.26))
             .clipShape(Circle())
             .overlay(
                 Circle()
-                    .strokeBorder(Color.white.opacity(0.12), lineWidth: 1)
+                    .strokeBorder(Color.islandForeground.opacity(0.12), lineWidth: 1)
             )
             .help(AppLocalization.string("远程连接"))
     }
@@ -1671,11 +1671,11 @@ struct IconButton: View {
         } label: {
             Image(systemName: icon)
                 .font(.system(size: 10, weight: .semibold))
-                .foregroundColor(isHovered ? .white.opacity(0.8) : .white.opacity(0.4))
+                .foregroundColor(isHovered ? Color.islandForeground.opacity(0.8) : Color.islandForeground.opacity(0.4))
                 .frame(width: 22, height: 22)
                 .background(
                     RoundedRectangle(cornerRadius: 6)
-                        .fill(isHovered ? Color.white.opacity(0.1) : Color.clear)
+                        .fill(isHovered ? Color.islandForeground.opacity(0.1) : Color.clear)
                 )
         }
         .buttonStyle(.plain)
@@ -1701,10 +1701,10 @@ struct CompactTerminalButton: View {
                 Text("Go to Terminal")
                     .font(.system(size: 10, weight: .medium))
             }
-            .foregroundColor(isEnabled ? .white.opacity(0.9) : .white.opacity(0.3))
+            .foregroundColor(isEnabled ? Color.islandForeground.opacity(0.9) : Color.islandForeground.opacity(0.3))
             .padding(.horizontal, 6)
             .padding(.vertical, 2)
-            .background(isEnabled ? Color.white.opacity(0.15) : Color.white.opacity(0.05))
+            .background(isEnabled ? Color.islandForeground.opacity(0.15) : Color.islandForeground.opacity(0.05))
             .clipShape(Capsule())
         }
         .buttonStyle(.plain)
@@ -1729,10 +1729,10 @@ struct TerminalButton: View {
                 Text("Terminal")
                     .font(.system(size: 11, weight: .medium))
             }
-            .foregroundColor(isEnabled ? .black : .white.opacity(0.4))
+            .foregroundColor(isEnabled ? Color.islandSurface : Color.islandForeground.opacity(0.4))
             .padding(.horizontal, 10)
             .padding(.vertical, 5)
-            .background(isEnabled ? Color.white.opacity(0.95) : Color.white.opacity(0.1))
+            .background(isEnabled ? Color.islandForeground.opacity(0.95) : Color.islandForeground.opacity(0.1))
             .clipShape(Capsule())
         }
         .buttonStyle(.plain)

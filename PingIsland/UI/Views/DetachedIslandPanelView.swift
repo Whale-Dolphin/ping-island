@@ -60,6 +60,16 @@ enum DetachedIslandPanelMetrics {
     }
 }
 
+enum DetachedFloatingPetAppearance {
+    static func isDark(_ appearance: NSAppearance) -> Bool {
+        appearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua
+    }
+
+    static func activeCountColor(isDark: Bool) -> Color {
+        isDark ? .white : .black
+    }
+}
+
 enum DetachedIslandBubblePlacement: CaseIterable, Equatable {
     case topLeft
     case topRight
@@ -753,7 +763,7 @@ struct DetachedIslandPanelView: View {
             height: layout.containerSize.height,
             alignment: .topLeading
         )
-        .preferredColorScheme(.dark)
+        .preferredColorScheme(settings.appearanceMode.preferredColorScheme)
         .onAppear {
             if !SessionMonitor.isRunningUnderXCTest {
                 sessionMonitor.startMonitoring()
@@ -877,11 +887,11 @@ private struct DetachedFloatingPetSettingsHintView: View {
             VStack(alignment: .leading, spacing: 8) {
                 Text(appLocalized: "最后一步：右键宠物形象")
                     .font(.system(size: 13, weight: .bold))
-                    .foregroundColor(.white)
+                    .foregroundColor(Color.islandForeground)
 
                 Text(appLocalized: "需要重新打开设置面板时，直接右键宠物形象就可以。")
                     .font(.system(size: 11, weight: .medium))
-                    .foregroundColor(.white.opacity(0.72))
+                    .foregroundColor(Color.islandForeground.opacity(0.72))
                     .fixedSize(horizontal: false, vertical: true)
             }
             .padding(.horizontal, 12)
@@ -909,6 +919,12 @@ private struct DetachedFloatingPetInteractionView: View {
     let onDragStarted: () -> Void
     let onDragChanged: (CGSize) -> Void
     let onDragEnded: () -> Void
+    @ObservedObject private var settings = AppSettings.shared
+    // The count sits on the desktop; system mode must observe the app's
+    // appearance, not a bubble or Settings window's explicit override.
+    @State private var isDarkSystemAppearance = DetachedFloatingPetAppearance.isDark(
+        NSApplication.shared.effectiveAppearance
+    )
 
     var body: some View {
         DetachedFloatingMascotView(
@@ -965,13 +981,18 @@ private struct DetachedFloatingPetInteractionView: View {
                 height: petMetrics.petHitFrame
             )
         }
+        .onReceive(NSApplication.shared.publisher(for: \.effectiveAppearance)) { appearance in
+            isDarkSystemAppearance = DetachedFloatingPetAppearance.isDark(appearance)
+        }
     }
 
     @ViewBuilder
     private var activeCountBadge: some View {
         PixelNumberView(
             value: activeCount,
-            color: .white.opacity(0.96),
+            color: DetachedFloatingPetAppearance.activeCountColor(
+                isDark: settings.appearanceMode.isDark(systemIsDark: isDarkSystemAppearance)
+            ),
             fontSize: petMetrics.activeCountFontSize(for: activeCount),
             weight: .semibold,
             tracking: activeCount >= 10 ? -0.15 : -0.05

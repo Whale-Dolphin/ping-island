@@ -6,7 +6,7 @@ struct MarkdownText: View {
     let baseColor: Color
     let fontSize: CGFloat
 
-    init(_ text: String, color: Color = .white.opacity(0.9), fontSize: CGFloat = 13) {
+    init(_ text: String, color: Color = Color.islandForeground.opacity(0.9), fontSize: CGFloat = 13) {
         self.text = text
         self.baseColor = color
         self.fontSize = fontSize
@@ -69,7 +69,7 @@ struct MarkdownContentView: View {
 
     init(
         _ markdown: String,
-        color: Color = .white.opacity(0.9),
+        color: Color = Color.islandForeground.opacity(0.9),
         fontSize: CGFloat = 13
     ) {
         self.blocks = UpdateReleaseNotesMarkdownParser.blocks(from: markdown)
@@ -136,7 +136,7 @@ struct MarkdownContentView: View {
         case .heading(let level, let text):
             Text(text)
                 .font(headingFont(level: level))
-                .foregroundColor(.white.opacity(level <= 3 ? 0.95 : 0.88))
+                .foregroundColor(Color.islandForeground.opacity(level <= 3 ? 0.95 : 0.88))
                 .fixedSize(horizontal: false, vertical: true)
 
         case .divider:
@@ -182,7 +182,7 @@ private struct MarkdownListRows: View {
 
                 if index < items.count - 1 {
                     Divider()
-                        .overlay(Color.white.opacity(0.06))
+                        .overlay(Color.islandForeground.opacity(0.06))
                 }
             }
         }
@@ -190,11 +190,11 @@ private struct MarkdownListRows: View {
         .padding(.vertical, 6)
         .background(
             RoundedRectangle(cornerRadius: 12, style: .continuous)
-                .fill(Color.white.opacity(0.04))
+                .fill(Color.islandForeground.opacity(0.04))
         )
         .overlay(
             RoundedRectangle(cornerRadius: 12, style: .continuous)
-                .stroke(Color.white.opacity(0.05), lineWidth: 1)
+                .stroke(Color.islandForeground.opacity(0.05), lineWidth: 1)
         )
     }
 
@@ -209,7 +209,7 @@ private struct MarkdownListRows: View {
         case .ordered:
             Text("\(index + 1)")
                 .font(.system(size: max(10, fontSize - 3), weight: .bold, design: .rounded))
-                .foregroundColor(.white.opacity(0.92))
+                .foregroundColor(Color.islandForeground.opacity(0.92))
                 .frame(width: 20, height: 20)
                 .background(
                     Circle()
@@ -226,11 +226,11 @@ private struct CodeBlockView: View {
         ScrollView(.horizontal, showsIndicators: false) {
             SwiftUI.Text(code)
                 .font(.system(size: 11, design: .monospaced))
-                .foregroundColor(.white.opacity(0.85))
+                .foregroundColor(Color.islandForeground.opacity(0.85))
                 .padding(10)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(Color.white.opacity(0.08))
+        .background(Color.islandForeground.opacity(0.08))
         .cornerRadius(6)
     }
 }

@@ -207,7 +207,7 @@ If `PingIslandUITests-Runner` stays suspended on macOS, run the UI tests from Xc
 
 Ping Island currently ships a 4-category settings panel:
 
-- **General** - launch at login and baseline app behavior
+- **General** - appearance (System / Light / Dark), launch at login and baseline app behavior
 - **Display** - notch display target and placement behavior
 - **Mascot** - client mascot previews, per-client overrides, animation states
 - **Sound** - experience-theme selection, event-specific sounds, sound pack mode, sound pack import
@@ -218,7 +218,7 @@ Ping Island includes three built-in experience themes under `Settings -> Sound -
 
 | Theme | What it changes | Recommended audio |
 | --- | --- | --- |
-| **PingIsland native** | The project's dark glass surfaces, rounded controls, and original visual language | Original built-in 8-bit mapping plus new semantic moments |
+| **PingIsland native** | The project's glass surfaces, rounded controls, and original visual language | Original built-in 8-bit mapping plus new semantic moments |
 | **macOS** | Native titlebar and traffic lights, full-height source-list sidebar, outline SF Symbols, system materials, and semantic controls | macOS system sounds |
 | **Pixel** | Silkscreen type, pixel grid surfaces, square controls, and code-rendered pixel icons | AgentIsland game-style 8-bit mapping |
 
@@ -346,6 +346,12 @@ Implementation details worth knowing:
 - OpenCode is wired through a generated plugin file under `~/.config/opencode/plugins/` and enabled from the documented global config at `~/.config/opencode/opencode.json`; legacy `config.json` entries are still recognized for cleanup.
 - Remote SSH hosts can bootstrap `PingIslandBridge`, rewrite remote Claude-compatible hooks to target that bridge, and forward remote events plus Codex usage snapshots back into the local Ping Island UI.
 - Focus routing spans iTerm2, Ghostty, Terminal.app, tmux, and VS Code-compatible IDE extensions.
+
+### Themes and the floating task count
+
+Right-click the floating pet to open **Settings → General → Appearance**. Choose **Follow System** (the default), **Light**, or **Dark**. The choice is saved and applies immediately to Settings, detached panels, and the task count (black in light mode, white in dark mode). System mode follows macOS appearance changes automatically. The screen-attached notch stays black.
+
+Appearance is independent of **Sound → Experience theme** (PingIsland native, macOS, or Pixel): changing appearance does not reset your theme, Pixel palette, or sounds, and selecting a theme does not reset appearance.
 
 ## Requirements
 

@@ -211,7 +211,7 @@ struct SessionHoverPreviewView: View {
                session.cwd != "/" {
                 Text(session.cwd)
                     .font(.system(size: max(11, settings.contentFontSize - 2), weight: .medium, design: .monospaced))
-                    .foregroundColor(.white.opacity(0.36))
+                    .foregroundColor(Color.islandForeground.opacity(0.36))
                     .lineLimit(1)
             }
         }
@@ -277,16 +277,16 @@ private struct SessionHoverCompactRow: View {
                     if !usesTitleOnlySubagentPresentation && !session.shouldHideProjectContextInUI {
                         Text(session.projectName)
                             .font(.system(size: max(12, settings.contentFontSize), weight: .semibold))
-                            .foregroundColor(.white.opacity(0.88))
+                            .foregroundColor(Color.islandForeground.opacity(0.88))
 
                         Text("·")
                             .font(.system(size: 13, weight: .semibold))
-                            .foregroundColor(.white.opacity(0.36))
+                            .foregroundColor(Color.islandForeground.opacity(0.36))
                     }
 
                     Text(usesTitleOnlySubagentPresentation ? session.titleOnlySubagentDisplayTitle : session.displayTitle)
                         .font(.system(size: max(14, settings.contentFontSize + 2), weight: .bold))
-                        .foregroundColor(.white)
+                        .foregroundColor(Color.islandForeground)
                         .lineLimit(1)
                 }
 
@@ -408,9 +408,9 @@ private struct HoverConversationCard: View {
             if let userText = snapshot.userText {
                 HoverConversationLine(
                     label: "你：",
-                    labelColor: .white.opacity(0.54),
+                    labelColor: Color.islandForeground.opacity(0.54),
                     text: userText,
-                    textColor: .white.opacity(0.84),
+                    textColor: Color.islandForeground.opacity(0.84),
                     fontSize: userFontSize,
                     lineLimit: compact ? 1 : 2
                 )
@@ -434,7 +434,7 @@ private struct HoverConversationCard: View {
                session.cwd != "/" {
                 Text(session.cwd)
                     .font(.system(size: max(10, settings.contentFontSize - 2), weight: .medium, design: .monospaced))
-                    .foregroundColor(.white.opacity(0.3))
+                    .foregroundColor(Color.islandForeground.opacity(0.3))
                     .lineLimit(1)
                     .padding(.top, 2)
             }
@@ -479,7 +479,7 @@ private struct HoverApprovalCard: View {
             VStack(alignment: .leading, spacing: 6) {
                 Text(verbatim: AppLocalization.format("%@ 请求批准", providerLabel))
                     .font(.system(size: 14, weight: .semibold))
-                    .foregroundColor(.white)
+                    .foregroundColor(Color.islandForeground)
 
                 Text(toolLabel)
                     .font(.system(size: 13, weight: .medium))
@@ -487,7 +487,7 @@ private struct HoverApprovalCard: View {
 
                 Text(detailText)
                     .font(.system(size: 11, weight: .medium, design: session.pendingToolInput == nil ? .default : .monospaced))
-                    .foregroundColor(.white.opacity(0.68))
+                    .foregroundColor(Color.islandForeground.opacity(0.68))
                     .fixedSize(horizontal: false, vertical: true)
                     .frame(maxWidth: .infinity, alignment: .leading)
             }
@@ -544,10 +544,10 @@ private struct HoverQuestionInterventionCard: View {
                 VStack(alignment: .leading, spacing: 4) {
                     Text(intervention.title)
                         .font(.system(size: 14, weight: .semibold))
-                        .foregroundColor(.white)
+                        .foregroundColor(Color.islandForeground)
                     Text(intervention.message)
                         .font(.system(size: 12, weight: .medium))
-                        .foregroundColor(.white.opacity(0.72))
+                        .foregroundColor(Color.islandForeground.opacity(0.72))
                 }
 
                 Spacer(minLength: 0)
@@ -575,7 +575,7 @@ private struct HoverQuestionInterventionCard: View {
                     if let statusMessage = intervention.externalContinuationStatusMessage {
                         Text(statusMessage)
                             .font(.system(size: 11))
-                            .foregroundColor(.white.opacity(0.62))
+                            .foregroundColor(Color.islandForeground.opacity(0.62))
                             .fixedSize(horizontal: false, vertical: true)
                     }
                 }
@@ -653,7 +653,7 @@ private struct HoverTerminalRoutedPromptNotice: View {
             session.isInTmux ? AppLocalization.string("终端") : session.interactionDisplayName
         ))
         .font(.system(size: 11, weight: .medium))
-        .foregroundColor(.white.opacity(0.64))
+        .foregroundColor(Color.islandForeground.opacity(0.64))
         .fixedSize(horizontal: false, vertical: true)
         .frame(maxWidth: .infinity, alignment: .leading)
     }
@@ -678,16 +678,16 @@ private struct HoverSessionHeader: View {
                         if !usesCodexSubagentTitleOnlyPresentation && !session.shouldHideProjectContextInUI {
                             Text(session.projectName)
                                 .font(.system(size: max(13, settings.contentFontSize), weight: .semibold))
-                                .foregroundColor(.white.opacity(0.88))
+                                .foregroundColor(Color.islandForeground.opacity(0.88))
 
                             Text("·")
                                 .font(.system(size: 14, weight: .semibold))
-                                .foregroundColor(.white.opacity(0.42))
+                                .foregroundColor(Color.islandForeground.opacity(0.42))
                         }
 
                         Text(usesCodexSubagentTitleOnlyPresentation ? session.titleOnlySubagentDisplayTitle : session.displayTitle)
                             .font(.system(size: max(15, settings.contentFontSize + 3), weight: .bold))
-                            .foregroundColor(.white)
+                            .foregroundColor(Color.islandForeground)
                             .lineLimit(1)
                     }
 
@@ -708,7 +708,7 @@ private struct HoverSessionHeader: View {
                session.cwd != "/" {
                 Text(session.cwd)
                     .font(.system(size: max(11, settings.contentFontSize - 2), weight: .medium, design: .monospaced))
-                    .foregroundColor(.white.opacity(0.36))
+                    .foregroundColor(Color.islandForeground.opacity(0.36))
                     .lineLimit(1)
             }
         }
@@ -763,14 +763,14 @@ private struct HoverSessionBadges: View {
         HStack(spacing: density.badgeSpacing) {
             previewBadge(
                 timeLabel,
-                tint: .white.opacity(0.08),
-                foreground: .white.opacity(0.72),
+                tint: Color.islandForeground.opacity(0.08),
+                foreground: Color.islandForeground.opacity(0.72),
                 fontDesign: .monospaced
             )
             previewBadge(
                 HoverPreviewStyle.providerLabel(for: session),
                 tint: HoverPreviewStyle.providerBadgeFill(for: session),
-                foreground: .white.opacity(0.95)
+                foreground: Color.islandForeground.opacity(0.95)
             )
             if let primarySupplementaryBadge {
                 supplementaryBadgeView(primarySupplementaryBadge)
@@ -787,8 +787,8 @@ private struct HoverSessionBadges: View {
         if let codexSubagentBadgeText = session.codexSubagentBadgeText {
             return .text(
                 codexSubagentBadgeText,
-                tint: .white.opacity(0.12),
-                foreground: .white.opacity(0.92),
+                tint: Color.islandForeground.opacity(0.12),
+                foreground: Color.islandForeground.opacity(0.92),
                 fontDesign: .monospaced
             )
         }
@@ -799,15 +799,15 @@ private struct HoverSessionBadges: View {
             return .text(
                 ideHostBadgeLabel,
                 tint: HoverPreviewStyle.ideHostBadgeFill(for: session),
-                foreground: .white.opacity(0.92),
+                foreground: Color.islandForeground.opacity(0.92),
                 fontDesign: .default
             )
         }
         if let terminalSourceBadgeLabel = session.terminalSourceBadgeLabel {
             return .text(
                 terminalSourceBadgeLabel,
-                tint: .white.opacity(0.08),
-                foreground: .white.opacity(0.9),
+                tint: Color.islandForeground.opacity(0.08),
+                foreground: Color.islandForeground.opacity(0.9),
                 fontDesign: .default
             )
         }
@@ -817,7 +817,7 @@ private struct HoverSessionBadges: View {
     private func previewBadge(
         _ text: String,
         tint: Color,
-        foreground: Color = .white.opacity(0.92),
+        foreground: Color = Color.islandForeground.opacity(0.92),
         fontDesign: Font.Design = .default
     ) -> some View {
         Text(text)
@@ -829,7 +829,7 @@ private struct HoverSessionBadges: View {
             .background(tint)
             .overlay(
                 Capsule()
-                    .strokeBorder(Color.white.opacity(0.04), lineWidth: 1)
+                    .strokeBorder(Color.islandForeground.opacity(0.04), lineWidth: 1)
             )
             .clipShape(Capsule())
     }
@@ -837,12 +837,12 @@ private struct HoverSessionBadges: View {
     private func remoteSessionBadge() -> some View {
         Image(systemName: "cloud.fill")
             .font(.system(size: density.badgeFontSize, weight: .semibold))
-            .foregroundColor(.white.opacity(0.92))
+            .foregroundColor(Color.islandForeground.opacity(0.92))
             .frame(width: density.remoteBadgeSize, height: density.remoteBadgeSize)
             .background(Color(red: 0.42, green: 0.70, blue: 0.98).opacity(0.26))
             .overlay(
                 Circle()
-                    .strokeBorder(Color.white.opacity(0.08), lineWidth: 1)
+                    .strokeBorder(Color.islandForeground.opacity(0.08), lineWidth: 1)
             )
             .clipShape(Circle())
             .help(AppLocalization.string("远程连接"))
@@ -874,15 +874,15 @@ private struct HoverSubagentBadges: View {
                 previewBadge(
                     subagentClientTypeBadgeText,
                     tint: HoverPreviewStyle.providerBadgeFill(for: session),
-                    foreground: .white.opacity(0.95)
+                    foreground: Color.islandForeground.opacity(0.95)
                 )
             }
 
             if let codexSubagentBadgeText = session.codexSubagentBadgeText {
                 previewBadge(
                     codexSubagentBadgeText,
-                    tint: .white.opacity(0.12),
-                    foreground: .white.opacity(0.92),
+                    tint: Color.islandForeground.opacity(0.12),
+                    foreground: Color.islandForeground.opacity(0.92),
                     fontDesign: .monospaced
                 )
             }
@@ -892,7 +892,7 @@ private struct HoverSubagentBadges: View {
     private func previewBadge(
         _ text: String,
         tint: Color,
-        foreground: Color = .white.opacity(0.92),
+        foreground: Color = Color.islandForeground.opacity(0.92),
         fontDesign: Font.Design = .default
     ) -> some View {
         Text(text)
@@ -904,7 +904,7 @@ private struct HoverSubagentBadges: View {
             .background(tint)
             .overlay(
                 Capsule()
-                    .strokeBorder(Color.white.opacity(0.04), lineWidth: 1)
+                    .strokeBorder(Color.islandForeground.opacity(0.04), lineWidth: 1)
             )
             .clipShape(Capsule())
     }
@@ -933,7 +933,7 @@ private struct HoverProviderGlyph: View {
                 animationTime: 0
             )
             .frame(width: HoverSessionLayout.glyphSize, height: HoverSessionLayout.glyphSize)
-            .background(attentionTone == nil ? Color.white.opacity(0.04) : Color.clear)
+            .background(attentionTone == nil ? Color.islandForeground.opacity(0.04) : Color.clear)
             .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
 
             if let attentionTone {
@@ -987,9 +987,9 @@ private struct HoverPreviewRowBackground: View {
             return accentColor.opacity(isHovered ? 0.24 : 0.18)
         }
         if isHovered {
-            return Color.white.opacity(0.08)
+            return Color.islandForeground.opacity(0.08)
         }
-        return Color.white.opacity(0.04)
+        return Color.islandForeground.opacity(0.04)
     }
 
     private var borderColor: Color {
@@ -997,9 +997,9 @@ private struct HoverPreviewRowBackground: View {
             return accentColor.opacity(isHovered ? 0.34 : 0.26)
         }
         if isHovered {
-            return Color.white.opacity(0.12)
+            return Color.islandForeground.opacity(0.12)
         }
-        return Color.white.opacity(0.05)
+        return Color.islandForeground.opacity(0.05)
     }
 
     var body: some View {
@@ -1048,7 +1048,7 @@ private enum HoverPreviewStyle {
         if session.ideHostBadgeLabel?.contains("Qoder") == true {
             return TerminalColors.qoder.opacity(0.24)
         }
-        return .white.opacity(0.08)
+        return Color.islandForeground.opacity(0.08)
     }
 
     static func emphasisColor(for session: SessionState) -> Color {
@@ -1067,15 +1067,15 @@ private enum HoverPreviewStyle {
 
     static func assistantTextColor(for session: SessionState, compact: Bool) -> Color {
         if session.needsQuestionResponse {
-            return .white.opacity(compact ? 0.82 : 0.88)
+            return Color.islandForeground.opacity(compact ? 0.82 : 0.88)
         }
         if session.needsApprovalResponse {
-            return .white.opacity(compact ? 0.74 : 0.8)
+            return Color.islandForeground.opacity(compact ? 0.74 : 0.8)
         }
         if session.isExecutionActive {
-            return .white.opacity(compact ? 0.68 : 0.78)
+            return Color.islandForeground.opacity(compact ? 0.68 : 0.78)
         }
-        return .white.opacity(compact ? 0.58 : 0.68)
+        return Color.islandForeground.opacity(compact ? 0.58 : 0.68)
     }
 }
 
@@ -1089,9 +1089,9 @@ private enum HoverPreviewLineBuilder {
                 HoverPreviewLine(
                     id: "user",
                     prefix: AppLocalization.string("你："),
-                    prefixColor: .white.opacity(compact ? 0.44 : 0.52),
+                    prefixColor: Color.islandForeground.opacity(compact ? 0.44 : 0.52),
                     text: userLine,
-                    color: .white.opacity(compact ? 0.68 : 0.76)
+                    color: Color.islandForeground.opacity(compact ? 0.68 : 0.76)
                 )
             )
         }
@@ -1115,7 +1115,7 @@ private enum HoverPreviewLineBuilder {
                     prefix: nil,
                     prefixColor: .clear,
                     text: fallback,
-                    color: .white.opacity(0.64)
+                    color: Color.islandForeground.opacity(0.64)
                 )
             )
         }
@@ -1212,12 +1212,12 @@ struct HoverEmptyPreviewView: View {
                 VStack(alignment: .center, spacing: density == .detachedCompact ? 6 : 9) {
                     Text(appLocalized: "No active session")
                         .font(.system(size: density == .detachedCompact ? 17 : 24, weight: .heavy))
-                        .foregroundColor(.white)
+                        .foregroundColor(Color.islandForeground)
                         .shadow(color: Color.black.opacity(0.30), radius: 6, y: 3)
 
                     Text(appLocalized: "Hover to preview active sessions. Click the Island to open the session list.")
                         .font(.system(size: density == .detachedCompact ? 10 : 12, weight: .semibold))
-                        .foregroundColor(.white.opacity(0.58))
+                        .foregroundColor(Color.islandForeground.opacity(0.58))
                         .multilineTextAlignment(.center)
                         .lineLimit(2)
                 }
@@ -1329,7 +1329,7 @@ private struct HoverEmptyInteractionHint: View {
 
                 Text(appLocalized: title)
                     .font(.system(size: density == .detachedCompact ? 10 : 11, weight: .semibold))
-                    .foregroundColor(.white.opacity(0.62))
+                    .foregroundColor(Color.islandForeground.opacity(0.62))
                     .lineLimit(1)
                     .minimumScaleFactor(0.84)
             }
@@ -1357,7 +1357,7 @@ private struct HoverEmptyShortcutHint: View {
 
             Text(appLocalized: action.shortTitle)
                 .font(.system(size: density == .detachedCompact ? 10 : 12, weight: .bold))
-                .foregroundColor(.white.opacity(0.9))
+                .foregroundColor(Color.islandForeground.opacity(0.9))
 
             Spacer(minLength: 6)
 
@@ -1418,7 +1418,7 @@ private struct HoverEmptyFooterNote: View {
                 .foregroundColor(TerminalColors.green.opacity(0.86))
             Text(appLocalized: "新会话会显示在这里")
                 .font(.system(size: 10, weight: .semibold))
-                .foregroundColor(.white.opacity(0.42))
+                .foregroundColor(Color.islandForeground.opacity(0.42))
                 .lineLimit(1)
                 .minimumScaleFactor(0.82)
             HoverEmptyDividerLine()
@@ -1429,7 +1429,7 @@ private struct HoverEmptyFooterNote: View {
 private struct HoverEmptyDividerLine: View {
     var body: some View {
         Rectangle()
-            .fill(Color.white.opacity(0.10))
+            .fill(Color.islandForeground.opacity(0.10))
             .frame(height: 1)
     }
 }
@@ -1440,15 +1440,15 @@ private struct HoverEmptyGlassCardBackground: View {
 
     var body: some View {
         RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
-            .fill(Color.white.opacity(0.035))
+            .fill(Color.islandForeground.opacity(0.035))
             .overlay(
                 RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
                     .strokeBorder(
                         LinearGradient(
                             colors: [
-                                Color.white.opacity(borderOpacity),
+                                Color.islandForeground.opacity(borderOpacity),
                                 TerminalColors.green.opacity(borderOpacity),
-                                Color.white.opacity(borderOpacity * 0.45)
+                                Color.islandForeground.opacity(borderOpacity * 0.45)
                             ],
                             startPoint: .topLeading,
                             endPoint: .bottomTrailing

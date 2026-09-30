@@ -166,7 +166,7 @@ private struct MascotClientCard: View {
                     .padding(.vertical, 4)
                     .background(
                         Capsule(style: .continuous)
-                            .fill(Color.white.opacity(isCustomized ? 0.10 : 0.06))
+                            .fill(Color.islandForeground.opacity(isCustomized ? 0.10 : 0.06))
                     )
             }
 
@@ -175,7 +175,7 @@ private struct MascotClientCard: View {
                     .fill(Color(nsColor: .controlBackgroundColor))
 
                 RoundedRectangle(cornerRadius: 18, style: .continuous)
-                    .strokeBorder(Color.white.opacity(0.08), lineWidth: 1)
+                    .strokeBorder(Color.islandForeground.opacity(0.08), lineWidth: 1)
 
                 MascotSettingsPreview(
                     kind: selectedMascot,
@@ -233,11 +233,11 @@ private struct MascotClientCard: View {
         .padding(14)
         .background(
             RoundedRectangle(cornerRadius: 20, style: .continuous)
-                .fill(Color.white.opacity(0.03))
+                .fill(Color.islandForeground.opacity(0.03))
         )
         .overlay(
             RoundedRectangle(cornerRadius: 20, style: .continuous)
-                .strokeBorder(Color.white.opacity(0.06), lineWidth: 1)
+                .strokeBorder(Color.islandForeground.opacity(0.06), lineWidth: 1)
         )
         .contentShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
         .onHover { hovering in
@@ -295,7 +295,7 @@ private struct StatChip: View {
         .padding(.vertical, 8)
         .background(
             RoundedRectangle(cornerRadius: 12, style: .continuous)
-                .fill(Color.white.opacity(0.04))
+                .fill(Color.islandForeground.opacity(0.04))
         )
     }
 }

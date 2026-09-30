@@ -253,19 +253,19 @@ struct ChatView: View {
                 HStack(spacing: 8) {
                     Image(systemName: "chevron.left")
                         .font(.system(size: 14, weight: .semibold))
-                        .foregroundColor(.white.opacity(isHeaderHovered ? 1.0 : 0.6))
+                        .foregroundColor(Color.islandForeground.opacity(isHeaderHovered ? 1.0 : 0.6))
                         .frame(width: 24, height: 24)
 
                     Text(session.titleOnlySubagentDisplayTitle)
                         .font(.system(size: 14, weight: .semibold))
-                        .foregroundColor(.white.opacity(isHeaderHovered ? 1.0 : 0.85))
+                        .foregroundColor(Color.islandForeground.opacity(isHeaderHovered ? 1.0 : 0.85))
                         .lineLimit(1)
                 }
                 .padding(.horizontal, 12)
                 .padding(.vertical, 10)
                 .background(
                     RoundedRectangle(cornerRadius: 8)
-                        .fill(isHeaderHovered ? Color.white.opacity(0.08) : Color.clear)
+                        .fill(isHeaderHovered ? Color.islandForeground.opacity(0.08) : Color.clear)
                 )
             }
             .buttonStyle(.plain)
@@ -279,11 +279,11 @@ struct ChatView: View {
                 } label: {
                     Image(systemName: "stop.circle.fill")
                         .font(.system(size: 16, weight: .semibold))
-                        .foregroundColor(.white.opacity(0.72))
+                        .foregroundColor(Color.islandForeground.opacity(0.72))
                         .frame(width: 28, height: 28)
                         .background(
                             Circle()
-                                .fill(Color.white.opacity(0.08))
+                                .fill(Color.islandForeground.opacity(0.08))
                         )
                 }
                 .buttonStyle(.plain)
@@ -292,7 +292,7 @@ struct ChatView: View {
         }
         .padding(.horizontal, 8)
         .padding(.vertical, 4)
-        .background(Color.black.opacity(0.2))
+        .background(Color.islandSurface.opacity(0.2))
         .overlay(alignment: .bottom) {
             LinearGradient(
                 colors: [fadeColor.opacity(0.7), fadeColor.opacity(0)],
@@ -316,7 +316,7 @@ struct ChatView: View {
     }
 
     private var assistantTextColor: Color {
-        .white.opacity(0.9)
+        Color.islandForeground.opacity(0.9)
     }
 
     private var processingAccentColor: Color {
@@ -337,11 +337,11 @@ struct ChatView: View {
     private var loadingState: some View {
         VStack(spacing: 8) {
             ProgressView()
-                .progressViewStyle(CircularProgressViewStyle(tint: .white.opacity(0.4)))
+                .progressViewStyle(CircularProgressViewStyle(tint: Color.islandForeground.opacity(0.4)))
                 .scaleEffect(0.8)
             Text("Loading messages...")
                 .font(.system(size: 13, weight: .medium))
-                .foregroundColor(.white.opacity(0.4))
+                .foregroundColor(Color.islandForeground.opacity(0.4))
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
@@ -352,10 +352,10 @@ struct ChatView: View {
         VStack(spacing: 8) {
             Image(systemName: "bubble.left.and.bubble.right")
                 .font(.system(size: 24))
-                .foregroundColor(.white.opacity(0.2))
+                .foregroundColor(Color.islandForeground.opacity(0.2))
             Text("No messages yet")
                 .font(.system(size: 13, weight: .medium))
-                .foregroundColor(.white.opacity(0.4))
+                .foregroundColor(Color.islandForeground.opacity(0.4))
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
@@ -363,7 +363,7 @@ struct ChatView: View {
     // MARK: - Message List
 
     /// Background color for fade gradients
-    private let fadeColor = Color(red: 0.00, green: 0.00, blue: 0.00)
+    private let fadeColor = Color.islandSurface
 
     private var messageList: some View {
         ChatTranscriptView(
@@ -400,16 +400,16 @@ struct ChatView: View {
             TextField(messagePlaceholder, text: $inputText)
                 .textFieldStyle(.plain)
                 .font(.system(size: 13))
-                .foregroundColor(.white)
+                .foregroundColor(Color.islandForeground)
                 .focused($isInputFocused)
                 .padding(.horizontal, 14)
                 .padding(.vertical, 10)
                 .background(
                     RoundedRectangle(cornerRadius: 20)
-                        .fill(Color.white.opacity(0.08))
+                        .fill(Color.islandForeground.opacity(0.08))
                         .overlay(
                             RoundedRectangle(cornerRadius: 20)
-                                .strokeBorder(Color.white.opacity(0.1), lineWidth: 1)
+                                .strokeBorder(Color.islandForeground.opacity(0.1), lineWidth: 1)
                         )
                 )
                 .onSubmit {
@@ -421,14 +421,14 @@ struct ChatView: View {
             } label: {
                 Image(systemName: "arrow.up.circle.fill")
                     .font(.system(size: 28))
-                    .foregroundColor(inputText.isEmpty ? .white.opacity(0.2) : .white.opacity(0.9))
+                    .foregroundColor(inputText.isEmpty ? Color.islandForeground.opacity(0.2) : Color.islandForeground.opacity(0.9))
             }
             .buttonStyle(.plain)
             .disabled(inputText.isEmpty)
         }
         .padding(.horizontal, 16)
         .padding(.vertical, 12)
-        .background(Color.black.opacity(0.2))
+        .background(Color.islandSurface.opacity(0.2))
         .overlay(alignment: .top) {
             LinearGradient(
                 colors: [fadeColor.opacity(0), fadeColor.opacity(0.7)],
@@ -466,10 +466,10 @@ struct ChatView: View {
                 }
                 .buttonStyle(.plain)
                 .font(.system(size: 12, weight: .semibold))
-                .foregroundColor(.black)
+                .foregroundColor(Color.islandSurface)
                 .padding(.horizontal, 14)
                 .padding(.vertical, 9)
-                .background(Capsule().fill(Color.white.opacity(0.9)))
+                .background(Capsule().fill(Color.islandForeground.opacity(0.9)))
 
                 if session.isInTmux {
                     Button {
@@ -479,22 +479,22 @@ struct ChatView: View {
                     }
                     .buttonStyle(.plain)
                     .font(.system(size: 12, weight: .semibold))
-                    .foregroundColor(.white)
+                    .foregroundColor(Color.islandForeground)
                     .padding(.horizontal, 14)
                     .padding(.vertical, 9)
-                    .background(Capsule().fill(Color.white.opacity(0.1)))
+                    .background(Capsule().fill(Color.islandForeground.opacity(0.1)))
                 }
             }
 
             Text(AppLocalization.format("%@ 已在客户端中发起追问，请打开并继续回答。", session.interactionDisplayName))
                 .font(.system(size: 11))
-                .foregroundColor(.white.opacity(0.68))
+                .foregroundColor(Color.islandForeground.opacity(0.68))
                 .fixedSize(horizontal: false, vertical: true)
         }
         .padding(.horizontal, 16)
         .padding(.vertical, 12)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(Color.black.opacity(0.2))
+        .background(Color.islandSurface.opacity(0.2))
         .overlay(alignment: .top) {
             LinearGradient(
                 colors: [fadeColor.opacity(0), fadeColor.opacity(0.7)],
@@ -516,10 +516,10 @@ struct ChatView: View {
                 VStack(alignment: .leading, spacing: 4) {
                     Text(intervention.title)
                         .font(.system(size: 13, weight: .semibold))
-                        .foregroundColor(.white)
+                        .foregroundColor(Color.islandForeground)
                     Text(intervention.message)
                         .font(.system(size: 11))
-                        .foregroundColor(.white.opacity(0.6))
+                        .foregroundColor(Color.islandForeground.opacity(0.6))
                         .lineLimit(2)
                 }
 
@@ -544,7 +544,7 @@ struct ChatView: View {
                     if let statusMessage = intervention.externalContinuationStatusMessage {
                         Text(statusMessage)
                             .font(.system(size: 11))
-                            .foregroundColor(.white.opacity(0.62))
+                            .foregroundColor(Color.islandForeground.opacity(0.62))
                             .fixedSize(horizontal: false, vertical: true)
                     }
                 }
@@ -560,10 +560,10 @@ struct ChatView: View {
                     }
                     .buttonStyle(.plain)
                     .font(.system(size: 12, weight: .semibold))
-                    .foregroundColor(.black)
+                    .foregroundColor(Color.islandSurface)
                     .padding(.horizontal, 14)
                     .padding(.vertical, 9)
-                    .background(Capsule().fill(Color.white.opacity(0.9)))
+                    .background(Capsule().fill(Color.islandForeground.opacity(0.9)))
                 }
             } else if intervention.supportsInlineResponse {
                 let secondaryActionTitle: String? = if session.clientInfo.prefersAnsweredQuestionFollowupAction {
@@ -619,10 +619,10 @@ struct ChatView: View {
                     }
                     .buttonStyle(.plain)
                     .font(.system(size: 12, weight: .semibold))
-                    .foregroundColor(.black)
+                    .foregroundColor(Color.islandSurface)
                     .padding(.horizontal, 14)
                     .padding(.vertical, 9)
-                    .background(Capsule().fill(Color.white.opacity(0.9)))
+                    .background(Capsule().fill(Color.islandForeground.opacity(0.9)))
 
                     if session.isInTmux {
                         Button {
@@ -633,17 +633,17 @@ struct ChatView: View {
                         }
                         .buttonStyle(.plain)
                         .font(.system(size: 12, weight: .semibold))
-                        .foregroundColor(.white)
+                        .foregroundColor(Color.islandForeground)
                         .padding(.horizontal, 14)
                         .padding(.vertical, 9)
-                        .background(Capsule().fill(Color.white.opacity(0.1)))
+                        .background(Capsule().fill(Color.islandForeground.opacity(0.1)))
                     }
                 }
             }
         }
         .padding(.horizontal, 16)
         .padding(.vertical, intervention.metadata["responseMode"] == "external_only" ? 10 : 12)
-        .background(Color.black.opacity(0.2))
+        .background(Color.islandSurface.opacity(0.2))
         .overlay(alignment: .top) {
             LinearGradient(
                 colors: [fadeColor.opacity(0), fadeColor.opacity(0.7)],
@@ -663,7 +663,7 @@ struct ChatView: View {
             session.isInTmux ? AppLocalization.string("终端") : session.interactionDisplayName
         ))
         .font(.system(size: 11, weight: .medium))
-        .foregroundColor(.white.opacity(0.62))
+        .foregroundColor(Color.islandForeground.opacity(0.62))
         .fixedSize(horizontal: false, vertical: true)
         .frame(maxWidth: .infinity, alignment: .leading)
     }
@@ -934,12 +934,12 @@ struct UserMessageView: View {
         HStack {
             Spacer(minLength: 60)
 
-            MarkdownText(text, color: .white, fontSize: 13)
+            MarkdownText(text, color: Color.islandForeground, fontSize: 13)
                 .padding(.horizontal, 14)
                 .padding(.vertical, 10)
                 .background(
                     RoundedRectangle(cornerRadius: 18)
-                        .fill(Color.white.opacity(0.15))
+                        .fill(Color.islandForeground.opacity(0.15))
                 )
         }
         .contentShape(Rectangle())
@@ -1048,7 +1048,7 @@ struct ToolCallView: View {
     private var statusColor: Color {
         switch tool.status {
         case .running:
-            return Color.white
+            return Color.islandForeground
         case .waitingForApproval:
             return Color.orange
         case .success:
@@ -1061,11 +1061,11 @@ struct ToolCallView: View {
     private var textColor: Color {
         switch tool.status {
         case .running:
-            return .white.opacity(0.6)
+            return Color.islandForeground.opacity(0.6)
         case .waitingForApproval:
             return Color.orange.opacity(0.9)
         case .success:
-            return .white.opacity(0.7)
+            return Color.islandForeground.opacity(0.7)
         case .error, .interrupted:
             return Color.red.opacity(0.8)
         }
@@ -1151,7 +1151,7 @@ struct ToolCallView: View {
                 if canExpand && tool.status != .running && tool.status != .waitingForApproval {
                     Image(systemName: "chevron.right")
                         .font(.system(size: 9, weight: .medium))
-                        .foregroundColor(.white.opacity(0.3))
+                        .foregroundColor(Color.islandForeground.opacity(0.3))
                         .rotationEffect(.degrees(isExpanded ? 90 : 0))
                         .animation(.spring(response: 0.25, dampingFraction: 0.8), value: isExpanded)
                 }
@@ -1183,7 +1183,7 @@ struct ToolCallView: View {
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(
             RoundedRectangle(cornerRadius: 6)
-                .fill(canExpand && isHovering ? Color.white.opacity(0.05) : Color.clear)
+                .fill(canExpand && isHovering ? Color.islandForeground.opacity(0.05) : Color.clear)
         )
         .contentShape(Rectangle())
         .onHover { hovering in
@@ -1266,7 +1266,7 @@ struct SubagentToolsList: View {
             if hiddenCount > 0 {
                 Text(verbatim: AppLocalization.format("+%lld more tool uses", hiddenCount))
                     .font(.system(size: 10))
-                    .foregroundColor(.white.opacity(0.4))
+                    .foregroundColor(Color.islandForeground.opacity(0.4))
             }
 
             // Show last 2 tools (most recent activity)
@@ -1312,12 +1312,12 @@ struct SubagentToolRow: View {
             // Tool name
             Text(tool.name)
                 .font(.system(size: 10, weight: .medium))
-                .foregroundColor(.white.opacity(0.6))
+                .foregroundColor(Color.islandForeground.opacity(0.6))
 
             // Status text (same format as regular tools)
             Text(statusText)
                 .font(.system(size: 10))
-                .foregroundColor(.white.opacity(0.5))
+                .foregroundColor(Color.islandForeground.opacity(0.5))
                 .lineLimit(1)
                 .truncationMode(.middle)
         }
@@ -1383,17 +1383,17 @@ struct SubagentToolsSummary: View {
         VStack(alignment: .leading, spacing: 4) {
             Text(verbatim: AppLocalization.format("Subagent used %lld tools:", tools.count))
                 .font(.system(size: 10, weight: .medium))
-                .foregroundColor(.white.opacity(0.5))
+                .foregroundColor(Color.islandForeground.opacity(0.5))
 
             HStack(spacing: 8) {
                 ForEach(toolCounts.prefix(5), id: \.0) { name, count in
                     HStack(spacing: 2) {
                         Text(name)
                             .font(.system(size: 10, design: .monospaced))
-                            .foregroundColor(.white.opacity(0.4))
+                            .foregroundColor(Color.islandForeground.opacity(0.4))
                         Text("×\(count)")
                             .font(.system(size: 9, design: .monospaced))
-                            .foregroundColor(.white.opacity(0.3))
+                            .foregroundColor(Color.islandForeground.opacity(0.3))
                     }
                 }
             }
@@ -1402,7 +1402,7 @@ struct SubagentToolsSummary: View {
         .padding(.horizontal, 8)
         .background(
             RoundedRectangle(cornerRadius: 6)
-                .fill(Color.white.opacity(0.03))
+                .fill(Color.islandForeground.opacity(0.03))
         )
     }
 }
@@ -1487,7 +1487,7 @@ struct ChatInteractivePromptBar: View {
                     .foregroundColor(TerminalColors.amber)
                 Text("Claude Code needs your input")
                     .font(.system(size: 11))
-                    .foregroundColor(.white.opacity(0.5))
+                    .foregroundColor(Color.islandForeground.opacity(0.5))
                     .lineLimit(1)
             }
             .opacity(showContent ? 1 : 0)
@@ -1507,10 +1507,10 @@ struct ChatInteractivePromptBar: View {
                     Text("Terminal")
                         .font(.system(size: 13, weight: .medium))
                 }
-                .foregroundColor(isInTmux ? .black : .white.opacity(0.4))
+                .foregroundColor(isInTmux ? .black : Color.islandForeground.opacity(0.4))
                 .padding(.horizontal, 16)
                 .padding(.vertical, 8)
-                .background(isInTmux ? Color.white.opacity(0.95) : Color.white.opacity(0.1))
+                .background(isInTmux ? Color.islandForeground.opacity(0.95) : Color.islandForeground.opacity(0.1))
                 .clipShape(Capsule())
             }
             .buttonStyle(.plain)
@@ -1520,7 +1520,7 @@ struct ChatInteractivePromptBar: View {
         .frame(minHeight: 44)  // Consistent height with other bars
         .padding(.horizontal, 16)
         .padding(.vertical, 12)
-        .background(Color.black.opacity(0.2))
+        .background(Color.islandSurface.opacity(0.2))
         .onAppear {
             withAnimation(.spring(response: 0.3, dampingFraction: 0.7).delay(0.05)) {
                 showContent = true
@@ -1559,7 +1559,7 @@ struct ChatApprovalBar: View {
                 if let input = toolInput {
                     Text(input)
                         .font(.system(size: 11))
-                        .foregroundColor(.white.opacity(0.5))
+                        .foregroundColor(Color.islandForeground.opacity(0.5))
                         .lineLimit(1)
                 }
             }
@@ -1571,7 +1571,7 @@ struct ChatApprovalBar: View {
             if suppressControls {
                 Text(appLocalized: "已保留在终端中处理")
                     .font(.system(size: 12, weight: .semibold))
-                    .foregroundColor(.white.opacity(0.62))
+                    .foregroundColor(Color.islandForeground.opacity(0.62))
             } else {
                 ConfirmationActionButton(
                     title: AppLocalization.string("Deny"),
@@ -1603,7 +1603,7 @@ struct ChatApprovalBar: View {
         .frame(minHeight: 44)  // Consistent height with other bars
         .padding(.horizontal, 16)
         .padding(.vertical, 12)
-        .background(Color.black.opacity(0.2))
+        .background(Color.islandSurface.opacity(0.2))
         .onAppear {
             withAnimation(.spring(response: 0.3, dampingFraction: 0.7).delay(0.05)) {
                 showContent = true

@@ -27,7 +27,7 @@ Choose a theme from **Settings → Sound → Experience theme**.
 
 | Theme | Visual language | Recommended audio |
 | --- | --- | --- |
-| **PingIsland native** | Ping Island's dark glass surfaces, rounded controls and existing icon treatment | The original built-in 8-bit mappings, extended to the new semantic moments |
+| **PingIsland native** | Ping Island's glass surfaces, rounded controls and existing icon treatment | The original built-in 8-bit mappings, extended to the new semantic moments |
 | **macOS** | Native titlebar and traffic lights, a full-height source-list sidebar, outline SF Symbols, system materials and semantic system colors | macOS system sounds |
 | **Pixel** | Silkscreen type, code-rendered pixel icons, square controls and pixel grid surfaces | AgentIsland's game-style 8-bit mappings |
 
@@ -54,6 +54,25 @@ new top-level theme or a copy of its sound mapping.
 Selecting a theme applies its recommended sound source and lifecycle mapping.
 Users can still customize the five lifecycle sounds afterwards, or select a
 local CESP/OpenPeon pack. Changing only the Pixel palette does not reset audio.
+
+### Independent appearance
+
+**Settings → General → Appearance** selects **Follow System**, **Light**, or
+**Dark** independently of the experience family and sound profile. The default
+is Follow System; the `appearanceMode` preference survives restarts. Theme
+selection must not reset appearance, and appearance changes must not reset audio.
+
+Settings and detached panels use the selected appearance. All built-in families,
+including both Pixel palettes, provide light/dark surfaces and foregrounds. Shared
+session views use adaptive neutrals, while saturated decision buttons keep their
+fixed white foregrounds and mascot artwork is unchanged. The floating task count
+resolves the selected mode against the system appearance (black/light, white/dark).
+The docked notch remains canonical black with a dark content environment.
+
+`AppAppearanceMode` owns the choice; experience tokens do not prescribe a color
+scheme. `AppearanceColors.swift` supplies dynamic AppKit-backed neutrals/palette
+variants that respect a window's effective appearance. Native backing-layer
+colors are re-resolved on appearance changes instead of retaining old CGColors.
 
 ## Settings window shell and themed content
 
@@ -131,11 +150,13 @@ hints, contrast, and reduced-motion-safe press feedback in every theme.
 
 ```text
 PingIsland/Core/
+├── AppAppearanceMode.swift          independent persisted system/light/dark choice
 ├── ExperienceThemeID.swift          persisted family and Pixel palette IDs
 ├── AppSoundFeedback.swift           semantic feedback entry point
 └── ExperienceSoundTransitions.swift pure timing/threshold evaluators
 
 PingIsland/UI/Themes/
+├── AppearanceColors.swift           adaptive neutrals and light/dark color variants
 ├── ExperienceTheme.swift            full token and sound-profile contract
 ├── PingIslandExperienceTheme.swift  original product experience
 ├── MacOSExperienceTheme.swift       native system experience
@@ -193,7 +214,12 @@ profile.
 
 The test suite verifies registration uniqueness, all three visual contracts,
 Pixel palette persistence, shared Pixel audio, complete lifecycle/auxiliary cue
-coverage, theme-recommended mappings and transition thresholds. Run both:
+coverage, theme-recommended mappings and transition thresholds.
+Appearance regressions also cover persistence and independence from sounds,
+light/dark contrast, effective SwiftUI/AppKit colors, placeholder preservation,
+and render attachments of real session rows, Markdown results and action controls.
+
+Run both:
 
 ```sh
 xcodebuild -project PingIsland.xcodeproj -scheme PingIsland \

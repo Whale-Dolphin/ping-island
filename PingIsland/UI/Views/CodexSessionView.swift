@@ -52,19 +52,19 @@ struct CodexSessionView: View {
                 HStack(spacing: 8) {
                     Image(systemName: "chevron.left")
                         .font(.system(size: 14, weight: .semibold))
-                        .foregroundColor(.white.opacity(isHeaderHovered ? 1.0 : 0.6))
+                        .foregroundColor(Color.islandForeground.opacity(isHeaderHovered ? 1.0 : 0.6))
                         .frame(width: 24, height: 24)
 
                     Text(appLocalized: "会话列表")
                         .font(.system(size: 14, weight: .semibold))
-                        .foregroundColor(.white.opacity(isHeaderHovered ? 1.0 : 0.85))
+                        .foregroundColor(Color.islandForeground.opacity(isHeaderHovered ? 1.0 : 0.85))
                         .lineLimit(1)
                 }
                 .padding(.horizontal, 12)
                 .padding(.vertical, 10)
                 .background(
                     RoundedRectangle(cornerRadius: 8)
-                        .fill(isHeaderHovered ? Color.white.opacity(0.08) : Color.clear)
+                        .fill(isHeaderHovered ? Color.islandForeground.opacity(0.08) : Color.clear)
                 )
             }
             .buttonStyle(.plain)
@@ -84,7 +84,7 @@ struct CodexSessionView: View {
                 truncationNotice: truncationNotice
             ) ?? session.displayTitle)
                 .font(.system(size: 16, weight: .semibold))
-                .foregroundColor(.white)
+                .foregroundColor(Color.islandForeground)
                 .lineLimit(2)
 
             HStack(spacing: 8) {
@@ -104,13 +104,13 @@ struct CodexSessionView: View {
 
                 Text(session.phase.description)
                     .font(.system(size: 11, weight: .medium, design: .monospaced))
-                    .foregroundColor(.white.opacity(0.5))
+                    .foregroundColor(Color.islandForeground.opacity(0.5))
             }
 
             if let summary = session.clientInfo.terminalContextSummary {
                 Text(summary)
                     .font(.system(size: 11, weight: .medium, design: .monospaced))
-                    .foregroundColor(.white.opacity(0.45))
+                    .foregroundColor(Color.islandForeground.opacity(0.45))
                     .lineLimit(1)
             }
 
@@ -121,7 +121,7 @@ struct CodexSessionView: View {
             ) {
                 Text(subagentLabel)
                     .font(.system(size: 11, weight: .medium, design: .monospaced))
-                    .foregroundColor(.white.opacity(0.55))
+                    .foregroundColor(Color.islandForeground.opacity(0.55))
                     .lineLimit(1)
             }
 
@@ -132,14 +132,14 @@ struct CodexSessionView: View {
             ) {
                 Text(preview)
                     .font(.system(size: 13))
-                    .foregroundColor(.white.opacity(0.72))
+                    .foregroundColor(Color.islandForeground.opacity(0.72))
                     .lineLimit(3)
             }
 
             if !session.cwd.isEmpty && session.cwd != "/" {
                 Text(session.cwd)
                     .font(.system(size: 11, weight: .medium, design: .monospaced))
-                    .foregroundColor(.white.opacity(0.45))
+                    .foregroundColor(Color.islandForeground.opacity(0.45))
                     .lineLimit(1)
             }
         }
@@ -147,7 +147,7 @@ struct CodexSessionView: View {
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(
             RoundedRectangle(cornerRadius: 16, style: .continuous)
-                .fill(Color.white.opacity(0.05))
+                .fill(Color.islandForeground.opacity(0.05))
         )
     }
 
@@ -155,9 +155,9 @@ struct CodexSessionView: View {
         VStack(alignment: .leading, spacing: 14) {
             Text(intervention.title)
                 .font(.system(size: 14, weight: .semibold))
-                .foregroundColor(.white)
+                .foregroundColor(Color.islandForeground)
 
-            MarkdownText(intervention.message, color: .white.opacity(0.72), fontSize: 12)
+            MarkdownText(intervention.message, color: Color.islandForeground.opacity(0.72), fontSize: 12)
 
             if shouldSuppressPromptControls {
                 terminalRoutedPromptNotice
@@ -171,7 +171,7 @@ struct CodexSessionView: View {
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(
             RoundedRectangle(cornerRadius: 18, style: .continuous)
-                .fill(Color.white.opacity(0.06))
+                .fill(Color.islandForeground.opacity(0.06))
         )
     }
 
@@ -181,7 +181,7 @@ struct CodexSessionView: View {
             session.isInTmux ? AppLocalization.string("终端") : session.interactionDisplayName
         ))
         .font(.system(size: 12, weight: .medium))
-        .foregroundColor(.white.opacity(0.66))
+        .foregroundColor(Color.islandForeground.opacity(0.66))
         .fixedSize(horizontal: false, vertical: true)
         .frame(maxWidth: .infinity, alignment: .leading)
     }
@@ -225,7 +225,7 @@ struct CodexSessionView: View {
                     } label: {
                         Text(verbatim: AppLocalization.format("打开 %@", session.interactionDisplayName))
                     }
-                    .buttonStyle(CodexCapsuleButtonStyle(background: Color.white.opacity(0.9), foreground: .black))
+                    .buttonStyle(CodexCapsuleButtonStyle(background: Color.islandForeground.opacity(0.9), foreground: .islandSurface))
                 }
             } else {
                 let secondaryActionTitle: String? = if intervention.supportsInlineResponse
@@ -292,10 +292,10 @@ struct CodexSessionView: View {
     private func contextBadge(_ label: String) -> some View {
         Text(label.uppercased())
             .font(.system(size: 10, weight: .bold, design: .monospaced))
-            .foregroundColor(.white.opacity(0.82))
+            .foregroundColor(Color.islandForeground.opacity(0.82))
             .padding(.horizontal, 6)
             .padding(.vertical, 3)
-            .background(Color.white.opacity(0.1))
+            .background(Color.islandForeground.opacity(0.1))
             .clipShape(Capsule())
     }
 }
@@ -391,7 +391,7 @@ struct CodexThreadInspectorView: View {
             HStack(spacing: 8) {
                 Text(sectionTitle)
                     .font(.system(size: 13, weight: .semibold))
-                    .foregroundColor(.white)
+                    .foregroundColor(Color.islandForeground)
 
                 Spacer(minLength: 0)
 
@@ -403,7 +403,7 @@ struct CodexThreadInspectorView: View {
             if let text = primaryResultText {
                 MarkdownText(
                     text,
-                    color: .white.opacity(0.82),
+                    color: Color.islandForeground.opacity(0.82),
                     fontSize: mode == .hover ? max(11, bodyFontSize - 1) : bodyFontSize
                 )
                     .lineLimit(mode.resultLineLimit)
@@ -413,7 +413,7 @@ struct CodexThreadInspectorView: View {
             } else {
                 Text(AppLocalization.format("No thread details yet. Once %@ responds, the latest result will show here.", session.providerDisplayName))
                     .font(.system(size: max(11, bodyFontSize - 1), weight: .medium))
-                    .foregroundColor(.white.opacity(0.56))
+                    .foregroundColor(Color.islandForeground.opacity(0.56))
             }
 
             if !recentItems.isEmpty {
@@ -462,7 +462,7 @@ struct CodexThreadInspectorView: View {
     private var backgroundView: some View {
         if mode == .chat {
             RoundedRectangle(cornerRadius: 18, style: .continuous)
-                .fill(Color.white.opacity(0.05))
+                .fill(Color.islandForeground.opacity(0.05))
         } else {
             Color.clear
         }
@@ -471,7 +471,7 @@ struct CodexThreadInspectorView: View {
     private var loadingText: some View {
         Text(appLocalized: "Loading details...")
             .font(.system(size: max(11, bodyFontSize - 1), weight: .medium))
-            .foregroundColor(.white.opacity(0.56))
+            .foregroundColor(Color.islandForeground.opacity(0.56))
     }
 
     private var followUpComposer: some View {
@@ -479,16 +479,16 @@ struct CodexThreadInspectorView: View {
             TextField(followUpPlaceholder, text: $followUpText)
                 .textFieldStyle(.plain)
                 .font(.system(size: max(12, bodyFontSize - 1)))
-                .foregroundColor(.white)
+                .foregroundColor(Color.islandForeground)
                 .focused($isFollowUpFocused)
                 .padding(.horizontal, 14)
                 .padding(.vertical, 10)
                 .background(
                     RoundedRectangle(cornerRadius: 20)
-                        .fill(Color.white.opacity(0.08))
+                        .fill(Color.islandForeground.opacity(0.08))
                         .overlay(
                             RoundedRectangle(cornerRadius: 20)
-                                .strokeBorder(Color.white.opacity(0.1), lineWidth: 1)
+                                .strokeBorder(Color.islandForeground.opacity(0.1), lineWidth: 1)
                         )
                 )
                 .onSubmit {
@@ -500,7 +500,7 @@ struct CodexThreadInspectorView: View {
             } label: {
                 Image(systemName: "arrow.up.circle.fill")
                     .font(.system(size: 28))
-                    .foregroundColor(canSubmitFollowUp ? .white.opacity(0.9) : .white.opacity(0.2))
+                    .foregroundColor(canSubmitFollowUp ? Color.islandForeground.opacity(0.9) : Color.islandForeground.opacity(0.2))
             }
             .buttonStyle(.plain)
             .disabled(!canSubmitFollowUp)
@@ -528,11 +528,11 @@ struct CodexThreadInspectorView: View {
     private func rowContent(for item: ChatHistoryItem) -> (prefix: String, prefixColor: Color, text: String, textColor: Color) {
         switch item.type {
         case .user(let text):
-            return ("你", .white.opacity(0.72), boundedHistoryText(text), .white.opacity(0.72))
+            return ("你", Color.islandForeground.opacity(0.72), boundedHistoryText(text), Color.islandForeground.opacity(0.72))
         case .assistant(let text):
-            return ("答", .white, boundedHistoryText(text), .white.opacity(0.82))
+            return ("答", Color.islandForeground, boundedHistoryText(text), Color.islandForeground.opacity(0.82))
         case .thinking(let text):
-            return ("注", TerminalColors.blue.opacity(0.9), boundedHistoryText(text), .white.opacity(0.58))
+            return ("注", TerminalColors.blue.opacity(0.9), boundedHistoryText(text), Color.islandForeground.opacity(0.58))
         case .toolCall, .interrupted:
             return ("", .clear, "", .clear)
         }
@@ -595,7 +595,7 @@ struct CodexThreadInspectorView: View {
 
 private struct CodexCapsuleButtonStyle: ButtonStyle {
     var background: Color
-    var foreground: Color = .white
+    var foreground: Color = Color.islandForeground
 
     func makeBody(configuration: Configuration) -> some View {
         configuration.label

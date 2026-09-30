@@ -43,18 +43,18 @@ struct SoundPickerRow: View {
 
                     Text(selectedSound.rawValue)
                         .font(.system(size: 11))
-                        .foregroundColor(.white.opacity(0.4))
+                        .foregroundColor(Color.islandForeground.opacity(0.4))
                         .lineLimit(1)
 
                     Image(systemName: isExpanded ? "chevron.up" : "chevron.down")
                         .font(.system(size: 10))
-                        .foregroundColor(.white.opacity(0.4))
+                        .foregroundColor(Color.islandForeground.opacity(0.4))
                 }
                 .padding(.horizontal, 12)
                 .padding(.vertical, 10)
                 .background(
                     RoundedRectangle(cornerRadius: 8)
-                        .fill(isHovered ? Color.white.opacity(0.08) : Color.clear)
+                        .fill(isHovered ? Color.islandForeground.opacity(0.08) : Color.clear)
                 )
             }
             .buttonStyle(.plain)
@@ -87,7 +87,7 @@ struct SoundPickerRow: View {
     }
 
     private var textColor: Color {
-        .white.opacity(isHovered ? 1.0 : 0.7)
+        Color.islandForeground.opacity(isHovered ? 1.0 : 0.7)
     }
 }
 
@@ -104,12 +104,12 @@ private struct SoundOptionRowInline: View {
         Button(action: action) {
             HStack(spacing: 8) {
                 Circle()
-                    .fill(isSelected ? TerminalColors.green : Color.white.opacity(0.2))
+                    .fill(isSelected ? TerminalColors.green : Color.islandForeground.opacity(0.2))
                     .frame(width: 6, height: 6)
 
                 Text(sound.rawValue)
                     .font(.system(size: 12, weight: .medium))
-                    .foregroundColor(.white.opacity(isHovered ? 1.0 : 0.7))
+                    .foregroundColor(Color.islandForeground.opacity(isHovered ? 1.0 : 0.7))
 
                 Spacer()
 
@@ -123,7 +123,7 @@ private struct SoundOptionRowInline: View {
             .padding(.vertical, 6)
             .background(
                 RoundedRectangle(cornerRadius: 6)
-                    .fill(isHovered ? Color.white.opacity(0.06) : Color.clear)
+                    .fill(isHovered ? Color.islandForeground.opacity(0.06) : Color.clear)
             )
         }
         .buttonStyle(.plain)

@@ -169,6 +169,48 @@ final class AppSettingsPersistenceTests: XCTestCase {
         XCTAssertEqual(defaults.string(forKey: "experienceThemeID"), ExperienceThemeID.standard.rawValue)
     }
 
+    func testAppearanceDefaultsToSystemAndNormalizesUnknownValues() {
+        let defaults = makeDefaults()
+        XCTAssertEqual(makeStore(defaults: defaults).appearanceMode, .system)
+        XCTAssertEqual(defaults.string(forKey: "appearanceMode"), "system")
+
+        defaults.set("retired-appearance", forKey: "appearanceMode")
+        XCTAssertEqual(makeStore(defaults: defaults).appearanceMode, .system)
+        XCTAssertEqual(defaults.string(forKey: "appearanceMode"), "system")
+    }
+
+    func testEveryAppearanceModePersistsAcrossStoreReloads() {
+        let defaults = makeDefaults()
+        let store = makeStore(defaults: defaults)
+        for mode in AppAppearanceMode.allCases {
+            store.appearanceMode = mode
+            XCTAssertEqual(makeStore(defaults: defaults).appearanceMode, mode)
+            XCTAssertEqual(defaults.string(forKey: "appearanceMode"), mode.rawValue)
+        }
+    }
+
+    func testAppearanceAndExperienceThemeDoNotOverwriteEachOther() {
+        let defaults = makeDefaults()
+        let store = makeStore(defaults: defaults)
+        store.appearanceMode = .light
+
+        for themeID in ExperienceThemeID.allCases {
+            store.applyExperienceTheme(themeID)
+            XCTAssertEqual(store.appearanceMode, .light)
+        }
+        store.pixelThemePaletteID = .gameBoyOlive
+        store.soundThemeMode = .builtIn
+        store.taskCompletedSound = .hero
+        store.appearanceMode = .dark
+
+        let reloaded = makeStore(defaults: defaults)
+        XCTAssertEqual(reloaded.appearanceMode, .dark)
+        XCTAssertEqual(reloaded.experienceThemeID, .pixel)
+        XCTAssertEqual(reloaded.pixelThemePaletteID, .gameBoyOlive)
+        XCTAssertEqual(reloaded.soundThemeMode, .builtIn)
+        XCTAssertEqual(reloaded.taskCompletedSound, .hero)
+    }
+
     func testMacOSThemeAppliesSystemSounds() {
         let defaults = makeDefaults()
         let store = makeStore(defaults: defaults)

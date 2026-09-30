@@ -11,21 +11,34 @@ final class IslandTextFieldTests: XCTestCase {
         XCTAssertTrue(textField.acceptsFirstMouse(for: nil))
     }
 
-    func testTextFieldUsesVisibleTextAndPlaceholderColors() {
+    func testTextFieldUsesVisibleTextAndPlaceholderColors() throws {
         let textField = IslandNSTextField()
         textField.placeholderString = "Type Something ..."
 
-        textField.configureTextAppearance()
-
-        XCTAssertEqual(textField.textColor, NSColor.white)
-        XCTAssertEqual(
-            textField.placeholderAttributedString?.attribute(
+        for name in [NSAppearance.Name.aqua, .darkAqua] {
+            let appearance = try XCTUnwrap(NSAppearance(named: name))
+            textField.appearance = appearance
+            textField.configureTextAppearance()
+            XCTAssertEqual(textField.placeholderAttributedString?.string, "Type Something ...")
+            let placeholder = try XCTUnwrap(textField.placeholderAttributedString?.attribute(
                 .foregroundColor,
                 at: 0,
                 effectiveRange: nil
-            ) as? NSColor,
-            NSColor.white.withAlphaComponent(0.38)
-        )
+            ) as? NSColor)
+            var textColor: NSColor?
+            var placeholderColor: NSColor?
+            appearance.performAsCurrentDrawingAppearance {
+                textColor = textField.textColor?.usingColorSpace(.deviceRGB)
+                placeholderColor = placeholder.usingColorSpace(.deviceRGB)
+            }
+            let expected: CGFloat = name == .darkAqua ? 1 : 0
+            for color in [try XCTUnwrap(textColor), try XCTUnwrap(placeholderColor)] {
+                XCTAssertEqual(color.redComponent, expected, accuracy: 0.001)
+                XCTAssertEqual(color.greenComponent, expected, accuracy: 0.001)
+                XCTAssertEqual(color.blueComponent, expected, accuracy: 0.001)
+            }
+            XCTAssertEqual(placeholderColor?.alphaComponent ?? 0, 0.38, accuracy: 0.001)
+        }
     }
 
     func testEditableTextFieldKeepsFirstResponderDuringTransientFocusMismatch() {

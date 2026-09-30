@@ -3,9 +3,9 @@ import SwiftUI
 struct ShortcutVisualLabel: View {
     let shortcut: GlobalShortcut
     var fontSize: CGFloat = 11
-    var foregroundColor: Color = .white.opacity(0.92)
+    var foregroundColor: Color = Color.islandForeground.opacity(0.92)
     var keyBackground: Color = Color.black.opacity(0.26)
-    var keyBorder: Color = Color.white.opacity(0.08)
+    var keyBorder: Color = Color.islandForeground.opacity(0.08)
     var keyMinWidth: CGFloat = 24
     var keyHorizontalPadding: CGFloat = 10
     var keyVerticalPadding: CGFloat = 7
@@ -111,19 +111,19 @@ struct GlobalShortcutFooterNote: View {
                 HStack(alignment: .center, spacing: 8) {
                     Text(appLocalized: title)
                         .font(.system(size: 10, weight: .medium))
-                        .foregroundColor(.white.opacity(0.24))
+                        .foregroundColor(Color.islandForeground.opacity(0.24))
 
                     ForEach(visibleActions, id: \.0.id) { action, shortcut in
                         HStack(spacing: 6) {
                             Text(appLocalized: action.shortTitle)
                                 .font(.system(size: 10, weight: .medium))
-                                .foregroundColor(.white.opacity(0.32))
+                                .foregroundColor(Color.islandForeground.opacity(0.32))
 
                             ShortcutVisualLabel(
                                 shortcut: shortcut,
                                 fontSize: 10,
-                                foregroundColor: .white.opacity(0.34),
-                                keyBackground: Color.white.opacity(0.025),
+                                foregroundColor: Color.islandForeground.opacity(0.34),
+                                keyBackground: Color.islandForeground.opacity(0.025),
                                 keyBorder: .clear,
                                 keyHorizontalPadding: 7,
                                 keyVerticalPadding: 4,

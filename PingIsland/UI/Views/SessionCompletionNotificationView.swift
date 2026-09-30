@@ -413,7 +413,7 @@ struct SessionCompletionNotificationView: View {
     }
 
     private var assistantTextColor: Color {
-        .white.opacity(0.82)
+        Color.islandForeground.opacity(0.82)
     }
 
     private var bodyFontSize: CGFloat {
@@ -459,7 +459,7 @@ struct SessionCompletionNotificationView: View {
         } else {
             Text(appLocalized: notification.kind.fallbackAssistantMessageKey)
                 .font(.system(size: bodyFontSize, weight: .medium))
-                .foregroundColor(.white.opacity(0.7))
+                .foregroundColor(Color.islandForeground.opacity(0.7))
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .lineLimit(assistantLineLimit)
                 .truncationMode(.tail)
@@ -520,11 +520,11 @@ struct SessionCompletionNotificationView: View {
                 if let userText {
                     Text(appLocalized: "你：")
                         .font(.system(size: 13, weight: .semibold))
-                        .foregroundColor(.white.opacity(0.48))
+                        .foregroundColor(Color.islandForeground.opacity(0.48))
 
                     Text(userText)
                         .font(.system(size: bodyFontSize, weight: .semibold))
-                        .foregroundColor(.white.opacity(0.88))
+                        .foregroundColor(Color.islandForeground.opacity(0.88))
                         .lineLimit(2)
                         .frame(maxWidth: .infinity, alignment: .leading)
                 } else {
@@ -533,14 +533,14 @@ struct SessionCompletionNotificationView: View {
 
                 Text(AppLocalization.string(notification.kind.statusLabelKey))
                     .font(.system(size: 13, weight: .bold))
-                    .foregroundColor(.white.opacity(0.5))
+                    .foregroundColor(Color.islandForeground.opacity(0.5))
                     .fixedSize()
             }
             .padding(.horizontal, 16)
             .padding(.vertical, 14)
 
             Rectangle()
-                .fill(Color.white.opacity(0.05))
+                .fill(Color.islandForeground.opacity(0.05))
                 .frame(height: 1)
 
             assistantSection
@@ -551,10 +551,10 @@ struct SessionCompletionNotificationView: View {
             content
                 .background(
                     RoundedRectangle(cornerRadius: containerCornerRadius, style: .continuous)
-                        .fill(Color.white.opacity(0.055))
+                        .fill(Color.islandForeground.opacity(0.055))
                         .overlay(
                             RoundedRectangle(cornerRadius: containerCornerRadius, style: .continuous)
-                                .strokeBorder(Color.white.opacity(0.06), lineWidth: 1)
+                                .strokeBorder(Color.islandForeground.opacity(0.06), lineWidth: 1)
                         )
                 )
         case .bubble:

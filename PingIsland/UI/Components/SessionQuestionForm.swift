@@ -164,7 +164,7 @@ struct SessionQuestionForm: View {
     }
 
     private var questionContainerShadowColor: Color {
-        Color.black.opacity(0.2)
+        Color.islandSurface.opacity(0.2)
     }
 
     private var activeFocusedQuestionID: String? {
@@ -221,7 +221,7 @@ struct SessionQuestionForm: View {
                     label: {
                         Text(appLocalized: submitLabel)
                     }
-                    .buttonStyle(SessionQuestionButtonStyle(background: Color.white.opacity(0.9), foreground: .black))
+                    .buttonStyle(SessionQuestionButtonStyle(background: Color.islandForeground.opacity(0.9), foreground: .islandSurface))
                     .disabled(!canSubmit || !isEditable)
                 }
 
@@ -232,7 +232,7 @@ struct SessionQuestionForm: View {
                     label: {
                         Text(verbatim: secondaryActionTitle)
                     }
-                    .buttonStyle(SessionQuestionButtonStyle(background: Color.white.opacity(0.1)))
+                    .buttonStyle(SessionQuestionButtonStyle(background: Color.islandForeground.opacity(0.1)))
                 }
             }
         }
@@ -293,13 +293,13 @@ struct SessionQuestionForm: View {
 
                     Text(question.prompt)
                         .font(.system(size: 13, weight: .medium))
-                        .foregroundColor(.white)
+                        .foregroundColor(Color.islandForeground)
                         .frame(maxWidth: .infinity, alignment: .leading)
 
                     if let detail = question.detail, !detail.isEmpty {
                         Text(detail)
                             .font(.system(size: 11))
-                            .foregroundColor(.white.opacity(0.55))
+                            .foregroundColor(Color.islandForeground.opacity(0.55))
                             .frame(maxWidth: .infinity, alignment: .leading)
                     }
 
@@ -328,32 +328,32 @@ struct SessionQuestionForm: View {
                         HStack(alignment: .top, spacing: 8) {
                             Text(Self.optionSequenceLabel(for: optionIndex))
                                 .font(.system(size: 10, weight: .bold, design: .monospaced))
-                                .foregroundColor(isSelected(option.title, for: question) ? TerminalColors.blue : .white.opacity(0.62))
+                                .foregroundColor(isSelected(option.title, for: question) ? TerminalColors.blue : Color.islandForeground.opacity(0.62))
                                 .frame(width: 20, height: 20)
                                 .background(
                                     Circle()
                                         .fill(
                                             isSelected(option.title, for: question)
                                                 ? TerminalColors.blue.opacity(0.16)
-                                                : Color.white.opacity(0.06)
+                                                : Color.islandForeground.opacity(0.06)
                                         )
                                 )
 
                             if question.allowsMultiple {
                                 Image(systemName: isSelected(option.title, for: question) ? "checkmark.square.fill" : "square")
                                     .font(.system(size: 15, weight: .semibold))
-                                    .foregroundColor(isSelected(option.title, for: question) ? TerminalColors.blue : .white.opacity(0.55))
+                                    .foregroundColor(isSelected(option.title, for: question) ? TerminalColors.blue : Color.islandForeground.opacity(0.55))
                             }
 
                             VStack(alignment: .leading, spacing: 4) {
                                 Text(option.title)
                                     .font(.system(size: 12, weight: .semibold))
-                                    .foregroundColor(.white)
+                                    .foregroundColor(Color.islandForeground)
                                     .fixedSize(horizontal: false, vertical: true)
                                 if let detail = optionDetail(for: option) {
                                     Text(detail)
                                         .font(.system(size: 10))
-                                        .foregroundColor(.white.opacity(0.55))
+                                        .foregroundColor(Color.islandForeground.opacity(0.55))
                                         .fixedSize(horizontal: false, vertical: true)
                                 } else if reservesDetailSpace {
                                     Text(" ")
@@ -371,7 +371,7 @@ struct SessionQuestionForm: View {
                                 .fill(
                                     isSelected(option.title, for: question)
                                         ? TerminalColors.blue.opacity(0.12)
-                                        : Color.white.opacity(0.04)
+                                        : Color.islandForeground.opacity(0.04)
                                 )
                         )
                         .overlay(
@@ -379,7 +379,7 @@ struct SessionQuestionForm: View {
                                 .strokeBorder(
                                     isSelected(option.title, for: question)
                                         ? TerminalColors.blue.opacity(0.72)
-                                        : Color.white.opacity(0.14),
+                                        : Color.islandForeground.opacity(0.14),
                                     lineWidth: 1
                                 )
                         )
@@ -400,7 +400,7 @@ struct SessionQuestionForm: View {
                 set: { answers[question.id] = normalizedAnswers(from: $0) }
             ))
             .textFieldStyle(.plain)
-            .foregroundColor(.white)
+            .foregroundColor(Color.islandForeground)
             .tint(TerminalColors.blue)
             .focused($focusedSecureQuestionID, equals: question.id)
             .submitLabel(.send)
@@ -411,7 +411,7 @@ struct SessionQuestionForm: View {
             .disabled(!isEditable)
             .overlay(
                 RoundedRectangle(cornerRadius: 12, style: .continuous)
-                    .strokeBorder(Color.white.opacity(0.14), lineWidth: 1)
+                    .strokeBorder(Color.islandForeground.opacity(0.14), lineWidth: 1)
             )
         } else {
             IslandTextField(
@@ -429,7 +429,7 @@ struct SessionQuestionForm: View {
             .disabled(!isEditable)
             .overlay(
                 RoundedRectangle(cornerRadius: 12, style: .continuous)
-                    .strokeBorder(Color.white.opacity(0.14), lineWidth: 1)
+                    .strokeBorder(Color.islandForeground.opacity(0.14), lineWidth: 1)
             )
         }
     }
@@ -440,7 +440,7 @@ struct SessionQuestionForm: View {
         return HStack(spacing: 8) {
             Image(systemName: "text.cursor")
                 .font(.system(size: 13, weight: .semibold))
-                .foregroundColor(.white.opacity(0.5))
+                .foregroundColor(Color.islandForeground.opacity(0.5))
                 .frame(width: 18)
 
             IslandTextField(
@@ -465,12 +465,12 @@ struct SessionQuestionForm: View {
     private func customAnswerFocusOutline(isFocused: Bool) -> some View {
         ZStack {
             RoundedRectangle(cornerRadius: 12, style: .continuous)
-                .strokeBorder(Color.white.opacity(0.14), lineWidth: 1)
+                .strokeBorder(Color.islandForeground.opacity(0.14), lineWidth: 1)
                 .blur(radius: 1.2)
                 .opacity(isFocused ? 1 : 0)
 
             RoundedRectangle(cornerRadius: 12, style: .continuous)
-                .strokeBorder(Color.white.opacity(0.14), lineWidth: 1)
+                .strokeBorder(Color.islandForeground.opacity(0.14), lineWidth: 1)
                 .opacity(isFocused ? 0.72 : 0)
         }
         .animation(.easeOut(duration: 0.16), value: isFocused)
@@ -607,7 +607,7 @@ struct SessionQuestionForm: View {
 
 private struct SessionQuestionButtonStyle: ButtonStyle {
     let background: Color
-    var foreground: Color = .white
+    var foreground: Color = Color.islandForeground
     @Environment(\.isEnabled) private var isEnabled
 
     func makeBody(configuration: Configuration) -> some View {

@@ -9,27 +9,26 @@ enum PingIslandExperienceTheme {
         pixelPaletteID: nil,
         metadata: ExperienceThemeMetadata(
             displayName: "PingIsland 原生",
-            description: "延续 PingIsland 的深色玻璃界面与原有 8-bit 声音语言。",
+            description: "延续 PingIsland 的玻璃界面与原有 8-bit 声音语言。",
             extensionNote: "在不改变原有五个阶段音色的前提下，补充会话、提醒和用量反馈。"
         ),
         visual: ExperienceThemeVisualTokens(
-            detachedSurface: .black,
+            detachedSurface: .islandSurface,
             settingsSurface: .clear,
-            settingsSidebarSurface: Color.white.opacity(0.055),
-            settingsDetailSurface: Color.white.opacity(0.035),
-            settingsCardSurface: Color.white.opacity(0.045),
-            settingsCardBorder: Color.white.opacity(0.11),
+            settingsSidebarSurface: Color.islandForeground.opacity(0.055),
+            settingsDetailSurface: Color.islandForeground.opacity(0.035),
+            settingsCardSurface: Color.islandForeground.opacity(0.045),
+            settingsCardBorder: Color.islandForeground.opacity(0.11),
             previewSurface: Color.primary.opacity(0.055),
             previewSidebarSurface: Color.primary.opacity(0.10),
-            primaryText: .white,
-            secondaryText: Color.white.opacity(0.72),
+            primaryText: .islandForeground,
+            secondaryText: Color.islandForeground.opacity(0.72),
             accent: .accentColor,
             controlCornerRadius: 18,
             settingsCornerRadius: 24,
             sectionCornerRadius: 18,
             controlFontDesign: .rounded,
             customFontName: nil,
-            preferredColorScheme: .dark,
             settingsChromeStyle: .pingIsland,
             usesPixelGrid: false,
             usesGlassMaterial: true
@@ -51,9 +50,9 @@ enum PingIslandExperienceTheme {
                 border: Color(red: 1.00, green: 0.49, blue: 0.51)
             ),
             neutral: .init(
-                foreground: .white,
-                background: Color.white.opacity(0.12),
-                border: Color.white.opacity(0.24)
+                foreground: .islandForeground,
+                background: Color.islandForeground.opacity(0.12),
+                border: Color.islandForeground.opacity(0.24)
             )
         ),
         motion: ExperienceThemeMotionTokens(

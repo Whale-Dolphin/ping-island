@@ -209,7 +209,7 @@ xcodebuild -project PingIsland.xcodeproj -scheme PingIsland -configuration Debug
 
 Ping Island 当前提供 4 个设置分类：
 
-- **General** - 登录启动与基础行为
+- **General** - 外观（跟随系统 / 浅色 / 深色）、登录启动与基础行为
 - **Display** - 显示器选择与位置行为
 - **Mascot** - 宠物预览、客户端覆盖、动作状态
 - **Sound** - 事件声音、声音包模式、声音包导入
@@ -310,6 +310,12 @@ Claude / Codex / Gemini CLI / Hermes Agent / Pi Agent / Oh My Pi (OMP) / Qwen Co
 - OpenCode 使用生成到 `~/.config/opencode/plugins/` 下的插件文件接入。
 - 远程 SSH 主机可以自动引导 `PingIslandBridge`，重写远程 Claude 兼容 hooks 指向桥接入口，并把远程事件回流到本机 Ping Island。
 - 聚焦路由覆盖 iTerm2、Ghostty、Terminal.app、tmux 和 VS Code 兼容 IDE 扩展。
+
+### 主题与悬浮数字
+
+右键悬浮宠物打开“设置 → 通用 → 外观”，可选择“跟随系统”（默认）、“浅色”或“深色”。选择会保存，并立即应用到设置、悬浮面板和任务数字：浅色模式用黑字，深色模式用白字。跟随系统时，macOS 切换外观会自动更新；顶部贴屏的刘海区仍保持黑色。
+
+这个开关独立于“声音 → 体验主题”中的 PingIsland 原生、macOS 和 Pixel：切换外观不会重置体验主题、Pixel 配色或声音，切换体验主题也不会重置外观。
 
 ## 系统要求
 

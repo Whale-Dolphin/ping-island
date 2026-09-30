@@ -23,11 +23,11 @@ struct TerminalColors {
     static let qoder = Color(red: 0.12, green: 0.88, blue: 0.56)
     static let kimi = Color(red: 0.96, green: 0.30, blue: 0.42)
     static let omp = Color(red: 0.976, green: 0.451, blue: 0.086) // #f97316
-    static let dim = Color.white.opacity(0.4)
-    static let dimmer = Color.white.opacity(0.2)
+    static let dim = Color.islandForeground.opacity(0.4)
+    static let dimmer = Color.islandForeground.opacity(0.2)
     static let prompt = Color(red: 0.85, green: 0.47, blue: 0.34)  // #d97857
-    static let background = Color.white.opacity(0.05)
-    static let backgroundHover = Color.white.opacity(0.1)
+    static let background = Color.islandForeground.opacity(0.05)
+    static let backgroundHover = Color.islandForeground.opacity(0.1)
 }
 
 extension SessionProvider {
@@ -71,7 +71,7 @@ extension SessionClientBrand {
         case .qoder:
             return TerminalColors.qoder
         case .neutral:
-            return Color.white.opacity(0.72)
+            return Color.islandForeground.opacity(0.72)
         case .copilot:
             return TerminalColors.green
         case .kimi:

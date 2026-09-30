@@ -50,11 +50,11 @@ struct UsageSummaryStripView: View {
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .background(
                     RoundedRectangle(cornerRadius: 16, style: .continuous)
-                        .fill(Color.white.opacity(0.045))
+                        .fill(Color.islandForeground.opacity(0.045))
                 )
                 .overlay(
                     RoundedRectangle(cornerRadius: 16, style: .continuous)
-                        .strokeBorder(Color.white.opacity(0.06), lineWidth: 1)
+                        .strokeBorder(Color.islandForeground.opacity(0.06), lineWidth: 1)
                 )
             }
         }
@@ -66,7 +66,7 @@ struct UsageSummaryStripView: View {
             HStack(alignment: .center, spacing: 6) {
                 Text(provider.title)
                     .font(.system(size: 9, weight: .bold, design: .monospaced))
-                    .foregroundColor(.white.opacity(0.62))
+                    .foregroundColor(Color.islandForeground.opacity(0.62))
 
                 switch displayStyle {
                 case .preferredBattery:
@@ -96,14 +96,14 @@ struct UsageSummaryStripView: View {
             HStack(alignment: .center, spacing: 10) {
                 Text(provider.title)
                     .font(.system(size: 11, weight: .bold, design: .monospaced))
-                    .foregroundColor(.white.opacity(0.72))
+                    .foregroundColor(Color.islandForeground.opacity(0.72))
 
                 ForEach(provider.windows, id: \.id) { window in
                     VStack(alignment: .leading, spacing: 2) {
                         HStack(spacing: 6) {
                             Text(window.label)
                                 .font(.system(size: 10, weight: .bold, design: .monospaced))
-                                .foregroundColor(.white.opacity(0.52))
+                                .foregroundColor(Color.islandForeground.opacity(0.52))
 
                             Text(window.valueText)
                                 .font(.system(size: 11, weight: .semibold, design: .monospaced))
@@ -114,7 +114,7 @@ struct UsageSummaryStripView: View {
                         if let resetText = window.resetText {
                             Text(resetText)
                                 .font(.system(size: 10, weight: .medium, design: .monospaced))
-                                .foregroundColor(.white.opacity(0.4))
+                                .foregroundColor(Color.islandForeground.opacity(0.4))
                                 .lineLimit(1)
                         }
                     }
@@ -144,7 +144,7 @@ struct UsageSummaryStripView: View {
         return HStack(spacing: 4) {
             Text(window.label)
                 .font(.system(size: 9, weight: .bold, design: .monospaced))
-                .foregroundColor(.white.opacity(0.4))
+                .foregroundColor(Color.islandForeground.opacity(0.4))
 
             BatteryQuotaIndicator(
                 severity: window.severity,
@@ -155,7 +155,7 @@ struct UsageSummaryStripView: View {
         .padding(.vertical, 4)
         .background(
             Capsule(style: .continuous)
-                .fill(Color.white.opacity(0.04))
+                .fill(Color.islandForeground.opacity(0.04))
         )
         .overlay(alignment: batteryPopoverAlignment) {
             if hoveredBatteryProviderID == hoverID(provider: provider, window: window) {
@@ -179,7 +179,7 @@ struct UsageSummaryStripView: View {
         HStack(spacing: 3) {
             Text(window.label)
                 .font(.system(size: 9, weight: .bold, design: .monospaced))
-                .foregroundColor(.white.opacity(0.4))
+                .foregroundColor(Color.islandForeground.opacity(0.4))
 
             Text(window.valueText)
                 .font(.system(size: 9, weight: .semibold, design: .monospaced))
@@ -291,7 +291,7 @@ private struct UsageBatteryCurrentWindowPopover: View {
             .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
             .overlay(
                 RoundedRectangle(cornerRadius: 10, style: .continuous)
-                    .strokeBorder(Color.white.opacity(0.16), lineWidth: 1)
+                    .strokeBorder(Color.islandForeground.opacity(0.16), lineWidth: 1)
             )
             .compositingGroup()
             .shadow(color: Color.black.opacity(0.42), radius: 12, y: 6)
@@ -333,7 +333,7 @@ private struct UsageBatteryDetailPopover: View {
             .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
             .overlay(
                 RoundedRectangle(cornerRadius: 10, style: .continuous)
-                    .strokeBorder(Color.white.opacity(0.16), lineWidth: 1)
+                    .strokeBorder(Color.islandForeground.opacity(0.16), lineWidth: 1)
             )
             .compositingGroup()
             .shadow(color: Color.black.opacity(0.42), radius: 12, y: 6)
@@ -361,14 +361,14 @@ private struct UsageBatteryDetailPopover: View {
                                     .frame(width: 42, alignment: .trailing)
                             }
                             .font(.system(size: 13, weight: .bold, design: .rounded))
-                            .foregroundStyle(Color.white.opacity(0.78))
+                            .foregroundStyle(Color.islandForeground.opacity(0.78))
                         }
                     }
                 }
 
                 if index < providers.count - 1 {
                     Rectangle()
-                        .fill(Color.white.opacity(0.10))
+                        .fill(Color.islandForeground.opacity(0.10))
                         .frame(height: 1)
                 }
             }
@@ -426,7 +426,7 @@ private final class OpaquePopoverBackingView: NSView {
         self.cornerRadius = cornerRadius
         super.init(frame: .zero)
         wantsLayer = true
-        layer?.backgroundColor = NSColor.black.cgColor
+        updateBackgroundColor()
         layer?.cornerRadius = cornerRadius
         layer?.masksToBounds = true
     }
@@ -440,9 +440,20 @@ private final class OpaquePopoverBackingView: NSView {
         true
     }
 
+    override func viewDidChangeEffectiveAppearance() {
+        super.viewDidChangeEffectiveAppearance()
+        updateBackgroundColor()
+    }
+
+    private func updateBackgroundColor() {
+        effectiveAppearance.performAsCurrentDrawingAppearance {
+            layer?.backgroundColor = NSColor(Color.islandSurface).cgColor
+        }
+    }
+
     override func layout() {
         super.layout()
-        layer?.backgroundColor = NSColor.black.cgColor
+        updateBackgroundColor()
         layer?.cornerRadius = cornerRadius
     }
 }
@@ -471,10 +482,10 @@ private struct BatteryQuotaIndicator: View {
             GeometryReader { proxy in
                 ZStack(alignment: .leading) {
                     RoundedRectangle(cornerRadius: 3, style: .continuous)
-                        .stroke(Color.white.opacity(0.26), lineWidth: 1)
+                        .stroke(Color.islandForeground.opacity(0.26), lineWidth: 1)
                         .background(
                             RoundedRectangle(cornerRadius: 3, style: .continuous)
-                                .fill(Color.white.opacity(0.04))
+                                .fill(Color.islandForeground.opacity(0.04))
                         )
 
                     let fillWidth = max(0, (proxy.size.width - 4) * fillLevel)
@@ -490,7 +501,7 @@ private struct BatteryQuotaIndicator: View {
             .frame(width: 18, height: 10)
 
             RoundedRectangle(cornerRadius: 1.2, style: .continuous)
-                .fill(Color.white.opacity(0.24))
+                .fill(Color.islandForeground.opacity(0.24))
                 .frame(width: 1.8, height: 4.8)
         }
     }
