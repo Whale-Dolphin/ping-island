@@ -1093,7 +1093,7 @@ struct InstanceRow: View {
             if isWaitingForApproval {
                 return TerminalColors.amber.opacity(isHovered ? 0.22 : 0.17)
             }
-            return Color.islandForeground.opacity(isHovered ? 0.14 : 0.11)
+            return Color.islandForeground.opacity(isHovered ? 0.18 : 0.14)
         }
         if isHighlighted {
             if session.needsQuestionResponse {
@@ -1102,7 +1102,7 @@ struct InstanceRow: View {
             if isWaitingForApproval {
                 return TerminalColors.amber.opacity(isHovered ? 0.2 : 0.15)
             }
-            return Color.islandForeground.opacity(isHovered ? 0.11 : 0.08)
+            return Color.islandForeground.opacity(isHovered ? 0.15 : 0.11)
         }
         if isExpanded {
             if session.needsQuestionResponse {
@@ -1111,7 +1111,7 @@ struct InstanceRow: View {
             if isWaitingForApproval {
                 return TerminalColors.amber.opacity(isHovered ? 0.18 : 0.13)
             }
-            return Color.islandForeground.opacity(isHovered ? 0.1 : 0.07)
+            return Color.islandForeground.opacity(isHovered ? 0.14 : 0.1)
         }
         if session.needsQuestionResponse {
             return TerminalColors.blue.opacity(isHovered ? 0.16 : 0.11)
@@ -1120,9 +1120,9 @@ struct InstanceRow: View {
             return TerminalColors.amber.opacity(isHovered ? 0.15 : 0.09)
         }
         if session.isExecutionActive {
-            return Color.islandForeground.opacity(isHovered ? 0.08 : 0.04)
+            return Color.islandForeground.opacity(isHovered ? 0.12 : 0.08)
         }
-        return isHovered ? Color.islandForeground.opacity(0.06) : Color.clear
+        return Color.islandForeground.opacity(isHovered ? 0.08 : 0.035)
     }
 
     private var rowBorderColor: Color {
@@ -1142,7 +1142,7 @@ struct InstanceRow: View {
             if isWaitingForApproval {
                 return TerminalColors.amber.opacity(0.3)
             }
-            return Color.islandForeground.opacity(isHovered ? 0.2 : 0.16)
+            return Color.islandForeground.opacity(isHovered ? 0.32 : 0.26)
         }
         if isExpanded {
             if session.needsQuestionResponse {
@@ -1151,15 +1151,15 @@ struct InstanceRow: View {
             if isWaitingForApproval {
                 return TerminalColors.amber.opacity(0.26)
             }
-            return Color.islandForeground.opacity(isHovered ? 0.16 : 0.12)
+            return Color.islandForeground.opacity(isHovered ? 0.30 : 0.24)
         }
         if session.needsQuestionResponse {
-            return TerminalColors.blue.opacity(0.16)
+            return TerminalColors.blue.opacity(0.32)
         }
         if isWaitingForApproval {
-            return TerminalColors.amber.opacity(0.16)
+            return TerminalColors.amber.opacity(0.32)
         }
-        return Color.islandForeground.opacity(isHovered ? 0.08 : 0.04)
+        return Color.islandForeground.opacity(isHovered ? 0.28 : 0.20)
     }
 
     private var shouldShowExpandedDetails: Bool {

@@ -68,6 +68,8 @@ session views use adaptive neutrals, while saturated decision buttons keep their
 fixed white foregrounds and mascot artwork is unchanged. The floating task count
 resolves the selected mode against the system appearance (black/light, white/dark).
 The docked notch remains canonical black with a dark content environment.
+Detached panels keep an inset outline even against a matching desktop background;
+session cards use separate fills and stronger borders so both nesting levels remain visible.
 
 `AppAppearanceMode` owns the choice; experience tokens do not prescribe a color
 scheme. `AppearanceColors.swift` supplies dynamic AppKit-backed neutrals/palette

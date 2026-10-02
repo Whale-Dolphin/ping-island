@@ -1197,7 +1197,7 @@ private struct DetachedFloatingMascotView: View {
     }
 }
 
-private struct DetachedIslandBubbleChrome<Content: View>: View {
+struct DetachedIslandBubbleChrome<Content: View>: View {
     let placement: DetachedIslandBubblePlacement
     @ViewBuilder let content: Content
     @Environment(\.islandExperienceTheme) private var theme
@@ -1216,6 +1216,11 @@ private struct DetachedIslandBubbleChrome<Content: View>: View {
                 .padding(.vertical, DetachedIslandPanelMetrics.bubbleVerticalPadding)
                 .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         }
+            .overlay {
+                // The mask keeps a one-point border inside the existing window bounds.
+                shape.stroke(Color.islandForeground.opacity(0.28), lineWidth: 2)
+                    .allowsHitTesting(false)
+            }
             .compositingGroup()
             .mask(shape)
             .padding(DetachedIslandPanelMetrics.bubbleRenderInset)

@@ -90,38 +90,60 @@ final class AppAppearanceTests: XCTestCase {
     }
 
     func testSessionRowResultAndActionControlsRenderInBothAppearances() throws {
-        let session = SessionState(
-            sessionId: "appearance-preview", cwd: "/synthetic/workspaces/appearance",
-            previewText: "Result saved successfully", phase: .ended
-        )
+        let sessions = [
+            SessionState(
+                sessionId: "appearance-running", cwd: "/synthetic/workspaces/build",
+                previewText: "Running the build", phase: .processing
+            ),
+            SessionState(
+                sessionId: "appearance-preview", cwd: "/synthetic/workspaces/review",
+                previewText: "Result saved successfully", phase: .ended
+            )
+        ]
         for theme in ExperienceThemeRegistry.all {
             for scheme in [ColorScheme.light, .dark] {
                 let renderer = ImageRenderer(content:
-                    VStack(alignment: .leading, spacing: 12) {
-                        InstanceRow(
-                            session: session, isExpanded: false, isSelected: false,
-                            isHighlighted: false, isYabaiAvailable: false,
-                            onSelect: {}, onActivate: {}, onToggleExpanded: {}, onFocus: {},
-                            onChat: {}, onOpenClient: {}, onArchive: {}, onTerminate: {},
-                            onApprove: {}, onApproveForSession: {}, onReject: {}
-                        )
-                        MarkdownContentView("## Completed\nThe result is ready to review.")
-                        HStack {
-                            ConfirmationActionButton(title: "Allow", role: .approve, action: {})
-                            ConfirmationActionButton(title: "Deny", role: .deny, action: {})
-                            TerminalButton(isEnabled: true, onTap: {})
+                    DetachedIslandBubbleChrome(placement: .topLeft) {
+                        VStack(alignment: .leading, spacing: 12) {
+                            ForEach(sessions, id: \.sessionId) { session in
+                                InstanceRow(
+                                    session: session, isExpanded: false, isSelected: false,
+                                    isHighlighted: false, isYabaiAvailable: false,
+                                    onSelect: {}, onActivate: {}, onToggleExpanded: {}, onFocus: {},
+                                    onChat: {}, onOpenClient: {}, onArchive: {}, onTerminate: {},
+                                    onApprove: {}, onApproveForSession: {}, onReject: {}
+                                )
+                            }
+                            MarkdownContentView("## Completed\nThe result is ready to review.")
+                            HStack {
+                                ConfirmationActionButton(title: "Allow", role: .approve, action: {})
+                                ConfirmationActionButton(title: "Deny", role: .deny, action: {})
+                                TerminalButton(isEnabled: true, onTap: {})
+                            }
                         }
+                        .padding(12)
                     }
-                    .padding(16)
-                    .frame(width: 530)
+                    .frame(width: 530, height: 340)
+                    .padding(8)
+                    // A matching desktop is the worst case: the outline alone
+                    // must still separate the panel and its first session card.
                     .background(theme.visual.detachedSurface)
                     .environment(\.islandExperienceTheme, theme)
                     .environment(\.mascotAnimationsEnabled, false)
                     .environment(\.colorScheme, scheme)
                 )
+                renderer.scale = 2
                 let image = try XCTUnwrap(renderer.nsImage)
-                XCTAssertEqual(image.size.width, 530, accuracy: 0.01)
+                XCTAssertEqual(image.size.width, 546, accuracy: 0.01)
                 XCTAssertGreaterThan(image.size.height, 100)
+                let bitmap = try XCTUnwrap(NSBitmapImageRep(data: image.tiffRepresentation!))
+                let desktop = try XCTUnwrap(bitmap.colorAt(x: 0, y: 0)?.usingColorSpace(.deviceRGB))
+                let panelEdge = try XCTUnwrap(bitmap.colorAt(x: bitmap.pixelsWide / 2, y: 20)?.usingColorSpace(.deviceRGB))
+                let cardEdge = try XCTUnwrap(bitmap.colorAt(x: bitmap.pixelsWide / 2, y: 52)?.usingColorSpace(.deviceRGB))
+                XCTAssertGreaterThan(abs(panelEdge.redComponent - desktop.redComponent), 0.17,
+                                     "Panel boundary disappeared: \(theme.id) / \(scheme)")
+                XCTAssertGreaterThan(abs(cardEdge.redComponent - desktop.redComponent), 0.14,
+                                     "Session card boundary disappeared: \(theme.id) / \(scheme)")
                 let attachment = XCTAttachment(image: image)
                 attachment.name = "appearance-\(theme.id.rawValue)-\(scheme)"
                 attachment.lifetime = .keepAlways
