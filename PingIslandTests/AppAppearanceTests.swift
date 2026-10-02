@@ -89,6 +89,114 @@ final class AppAppearanceTests: XCTestCase {
         }
     }
 
+    func testHoverCardsHaveVisibleEdgesWithoutHoveringInDarkMode() throws {
+        let sessions = [
+            SessionState(sessionId: "hover-working", cwd: "/synthetic/build", phase: .processing),
+            SessionState(sessionId: "hover-completed", cwd: "/synthetic/review", phase: .ended)
+        ]
+        for density in [HoverPreviewDensity.regular, .detachedCompact] {
+            for theme in ExperienceThemeRegistry.all {
+                let renderer = ImageRenderer(content:
+                    VStack(spacing: density.containerSpacing) {
+                        ForEach(sessions) { session in
+                            SessionHoverCompactRow(session: session, density: density, onOpen: {})
+                        }
+                    }
+                        .padding(.horizontal, density.horizontalPadding)
+                        .padding(.top, density.topPadding)
+                        .frame(width: 530, height: 230, alignment: .top)
+                        .background(theme.visual.detachedSurface)
+                        .environment(\.islandExperienceTheme, theme)
+                        .environment(\.mascotAnimationsEnabled, false)
+                        .environment(\.colorScheme, .dark)
+                )
+                renderer.scale = 2
+                let image = try XCTUnwrap(renderer.nsImage)
+                let bitmap = try XCTUnwrap(NSBitmapImageRep(data: image.tiffRepresentation!))
+                let x = bitmap.pixelsWide / 2
+                let top = Int(density.topPadding * 2)
+                let edge = try XCTUnwrap(bitmap.colorAt(x: x, y: top)?.usingColorSpace(.deviceRGB))
+                let fill = try XCTUnwrap(bitmap.colorAt(x: x, y: top + 6)?.usingColorSpace(.deviceRGB))
+                XCTAssertGreaterThanOrEqual(contrast(edge, on: fill), 3,
+                                           "Hover card edge is too faint: \(theme.id) / \(density)")
+                let attachment = XCTAttachment(image: image)
+                attachment.name = "hover-cards-\(theme.id.rawValue)-\(density)"
+                attachment.lifetime = .keepAlways
+                add(attachment)
+            }
+        }
+    }
+
+    func testFloatingCountStaysOutsideEveryMascotAndInsideTheHitFrame() throws {
+        for kind in MascotKind.allCases {
+            let scales: [CGFloat] = kind == .codex ? [1, 1.4, 6, 10] : [1]
+            for scale in scales {
+                let metrics = DetachedIslandPetMetrics(scale: scale)
+                for status in [MascotStatus.working, .idle] {
+                    for scheme in [ColorScheme.light, .dark] {
+                        func render(count: Int) throws -> NSBitmapImageRep {
+                            let renderer = ImageRenderer(content:
+                                DetachedFloatingPetArtwork(
+                                    kind: kind, status: status, petMetrics: metrics, isDragging: false,
+                                    activeCount: count,
+                                    countColor: DetachedFloatingPetAppearance.activeCountColor(isDark: scheme == .dark)
+                                )
+                                .frame(width: metrics.petHitFrame, height: metrics.petHitFrame)
+                                .background(scheme == .dark ? Color.black : Color.white)
+                                .environment(\.mascotAnimationsEnabled, false)
+                                .environment(\.colorScheme, scheme)
+                            )
+                            renderer.scale = 1
+                            let image = try XCTUnwrap(renderer.nsImage)
+                            return try XCTUnwrap(NSBitmapImageRep(data: image.tiffRepresentation!))
+                        }
+                        let baseline = try render(count: 0)
+                        for count in [3, 99] {
+                            let bitmap = try render(count: count)
+                            if kind == .codex && scale == 1 && status == .working {
+                                for (label, sample) in [("without-count", baseline), ("count-\(count)", bitmap)] {
+                                    let image = NSImage(size: CGSize(width: sample.pixelsWide, height: sample.pixelsHigh))
+                                    image.addRepresentation(sample)
+                                    let attachment = XCTAttachment(image: image)
+                                    attachment.name = "pet-\(kind)-\(scheme)-\(label)"
+                                    attachment.lifetime = .keepAlways
+                                    add(attachment)
+                                }
+                            }
+                            XCTAssertEqual(bitmap.pixelsWide, baseline.pixelsWide)
+                            XCTAssertEqual(bitmap.pixelsHigh, baseline.pixelsHigh)
+                            var countMinX = bitmap.pixelsWide
+                            var countMaxX = -1
+                            // Compare actual pixels, so a layout-only test cannot miss
+                            // text painted back inside the sprite by trailing alignment.
+                            for y in 0..<bitmap.pixelsHigh {
+                                for x in 0..<bitmap.pixelsWide {
+                                    let pixel = try XCTUnwrap(bitmap.colorAt(x: x, y: y))
+                                    let reference = try XCTUnwrap(baseline.colorAt(x: x, y: y))
+                                    let channels = [pixel.redComponent, pixel.greenComponent, pixel.blueComponent, pixel.alphaComponent]
+                                    let referenceChannels = [reference.redComponent, reference.greenComponent, reference.blueComponent, reference.alphaComponent]
+                                    // Metal's linear sprite texture may round by one 8-bit
+                                    // level between renders; that is not text or movement.
+                                    if zip(channels, referenceChannels).contains(where: { abs($0 - $1) > 1.01 / 255 }) {
+                                        countMinX = min(countMinX, x)
+                                        countMaxX = max(countMaxX, x)
+                                    }
+                                }
+                            }
+                            let mascotRight = (metrics.petHitFrame + metrics.mascotDisplaySize) / 2
+                            let context = "\(kind) / \(status) / \(scheme) / scale \(scale) / \(count)"
+                            XCTAssertGreaterThan(countMaxX, countMinX, "Count did not render: \(context)")
+                            XCTAssertGreaterThanOrEqual(CGFloat(countMinX), floor(mascotRight + 4 * scale),
+                                                       "Count overlaps mascot clearance: \(context)")
+                            XCTAssertLessThan(countMaxX, bitmap.pixelsWide - 1,
+                                              "Count is clipped by the window: \(context)")
+                        }
+                    }
+                }
+            }
+        }
+    }
+
     func testSessionRowResultAndActionControlsRenderInBothAppearances() throws {
         let sessions = [
             SessionState(
@@ -144,6 +252,11 @@ final class AppAppearanceTests: XCTestCase {
                                      "Panel boundary disappeared: \(theme.id) / \(scheme)")
                 XCTAssertGreaterThan(abs(cardEdge.redComponent - desktop.redComponent), 0.14,
                                      "Session card boundary disappeared: \(theme.id) / \(scheme)")
+                if scheme == .dark {
+                    let cardFill = try XCTUnwrap(bitmap.colorAt(x: bitmap.pixelsWide / 2, y: 58)?.usingColorSpace(.deviceRGB))
+                    XCTAssertGreaterThanOrEqual(contrast(cardEdge, on: cardFill), 3,
+                                               "Pinned card edge is too faint: \(theme.id)")
+                }
                 let attachment = XCTAttachment(image: image)
                 attachment.name = "appearance-\(theme.id.rawValue)-\(scheme)"
                 attachment.lifetime = .keepAlways

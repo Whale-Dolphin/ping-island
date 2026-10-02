@@ -678,6 +678,7 @@ struct InstanceRow: View {
     @State private var isHovered = false
     @ObservedObject private var settings = AppSettings.shared
     @ObservedObject private var energyGovernor = EnergyGovernor.shared
+    @Environment(\.colorScheme) private var colorScheme
 
     private let spinnerSymbols = ["·", "✢", "✳", "∗", "✻", "✽"]
 
@@ -1122,10 +1123,25 @@ struct InstanceRow: View {
         if session.isExecutionActive {
             return Color.islandForeground.opacity(isHovered ? 0.12 : 0.08)
         }
+        if colorScheme == .dark {
+            return Color.white.opacity(isHovered ? 0.14 : 0.10)
+        }
         return Color.islandForeground.opacity(isHovered ? 0.08 : 0.035)
     }
 
     private var rowBorderColor: Color {
+        if colorScheme == .dark {
+            if session.needsQuestionResponse {
+                return TerminalColors.blue.opacity(0.9)
+            }
+            if isWaitingForApproval {
+                return TerminalColors.amber.opacity(0.9)
+            }
+            if isSelected {
+                return TerminalColors.green.opacity(0.9)
+            }
+            return Color.white.opacity(isHovered || isHighlighted || isExpanded ? 0.55 : 0.44)
+        }
         if isSelected {
             if session.needsQuestionResponse {
                 return TerminalColors.blue.opacity(0.34)

@@ -227,7 +227,7 @@ private struct HoverConversationSnapshot {
     let assistantText: String?
 }
 
-private struct SessionHoverCompactRow: View {
+struct SessionHoverCompactRow: View {
     let session: SessionState
     var isHighlighted = false
     var density: HoverPreviewDensity = .regular
@@ -977,6 +977,7 @@ private struct HoverPreviewRowBackground: View {
     let isHighlighted: Bool
     let isHovered: Bool
     let density: HoverPreviewDensity
+    @Environment(\.colorScheme) private var colorScheme
 
     private var cornerRadius: CGFloat {
         density == .detachedCompact ? 18 : 20
@@ -986,6 +987,9 @@ private struct HoverPreviewRowBackground: View {
         if isHighlighted {
             return accentColor.opacity(isHovered ? 0.24 : 0.18)
         }
+        if colorScheme == .dark {
+            return Color.white.opacity(isHovered ? 0.14 : 0.10)
+        }
         if isHovered {
             return Color.islandForeground.opacity(0.08)
         }
@@ -993,6 +997,11 @@ private struct HoverPreviewRowBackground: View {
     }
 
     private var borderColor: Color {
+        if colorScheme == .dark {
+            return isHighlighted
+                ? accentColor.opacity(0.9)
+                : Color.white.opacity(isHovered ? 0.55 : 0.44)
+        }
         if isHighlighted {
             return accentColor.opacity(isHovered ? 0.34 : 0.26)
         }

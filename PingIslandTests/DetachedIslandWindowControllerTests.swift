@@ -465,12 +465,12 @@ final class DetachedIslandWindowControllerTests: XCTestCase {
         XCTAssertEqual(petMetrics.activeCountFontSize(for: 1), 92, accuracy: 0.5)
     }
 
-    func testFloatingPetOverlaySpacingDoesNotGrowWithScale() {
+    func testFloatingCountClearanceScalesWithArtworkWhileUsageGapStaysFixed() {
         let standardMetrics = DetachedIslandPanelMetrics.petMetrics(scale: 1)
         let enlargedMetrics = DetachedIslandPanelMetrics.petMetrics(scale: 6)
 
-        XCTAssertEqual(standardMetrics.badgeOffset, CGSize(width: 4, height: 2))
-        XCTAssertEqual(enlargedMetrics.badgeOffset, standardMetrics.badgeOffset)
+        XCTAssertEqual(standardMetrics.activeCountGap, 4, accuracy: 0.001)
+        XCTAssertEqual(enlargedMetrics.activeCountGap, 24, accuracy: 0.001)
         XCTAssertEqual(
             enlargedMetrics.floatingUsageBoltGap,
             standardMetrics.floatingUsageBoltGap,

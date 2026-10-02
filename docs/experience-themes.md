@@ -70,6 +70,10 @@ resolves the selected mode against the system appearance (black/light, white/dar
 The docked notch remains canonical black with a dark content environment.
 Detached panels keep an inset outline even against a matching desktop background;
 session cards use separate fills and stronger borders so both nesting levels remain visible.
+This includes the hover dashboard and attention cards, not just the pinned list.
+Dark cards have a visible outline even before hovering. The floating count starts
+outside the full mascot canvas, with clearance proportional to pet scale; keyboards
+and two-digit counts must not overlap, and count changes must not move the pet anchor.
 
 `AppAppearanceMode` owns the choice; experience tokens do not prescribe a color
 scheme. `AppearanceColors.swift` supplies dynamic AppKit-backed neutrals/palette

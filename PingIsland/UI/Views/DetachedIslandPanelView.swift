@@ -7,7 +7,7 @@ struct DetachedIslandPetMetrics: Equatable {
     let petVisualFrame: CGFloat
     let petHitFrame: CGFloat
     let mascotDisplaySize: CGFloat
-    let badgeOffset: CGSize
+    let activeCountGap: CGFloat
     let floatingUsageBoltGap: CGFloat
     let floatingUsageBoltFontSize: CGFloat
 
@@ -21,7 +21,7 @@ struct DetachedIslandPetMetrics: Equatable {
         self.petVisualFrame = 74 * sanitizedScale
         self.petHitFrame = 92 * sanitizedScale
         self.mascotDisplaySize = 46 * sanitizedScale
-        self.badgeOffset = CGSize(width: 4, height: 2)
+        self.activeCountGap = 4 * sanitizedScale
         self.floatingUsageBoltGap = 9
         self.floatingUsageBoltFontSize = 8 * sanitizedScale
     }
@@ -927,21 +927,16 @@ private struct DetachedFloatingPetInteractionView: View {
     )
 
     var body: some View {
-        DetachedFloatingMascotView(
+        DetachedFloatingPetArtwork(
             kind: mascotKind,
             status: mascotStatus,
             petMetrics: petMetrics,
-            isDragging: isDragging
+            isDragging: isDragging,
+            activeCount: activeCount,
+            countColor: DetachedFloatingPetAppearance.activeCountColor(
+                isDark: settings.appearanceMode.isDark(systemIsDark: isDarkSystemAppearance)
+            )
         )
-        .overlay(alignment: .bottomTrailing) {
-            if activeCount > 0 {
-                activeCountBadge
-                    .offset(
-                        x: petMetrics.badgeOffset.width,
-                        y: petMetrics.badgeOffset.height
-                    )
-            }
-        }
         .overlay(alignment: .top) {
             if !usageWindows.isEmpty {
                 DetachedFloatingUsageBoltView(
@@ -986,18 +981,6 @@ private struct DetachedFloatingPetInteractionView: View {
         }
     }
 
-    @ViewBuilder
-    private var activeCountBadge: some View {
-        PixelNumberView(
-            value: activeCount,
-            color: DetachedFloatingPetAppearance.activeCountColor(
-                isDark: settings.appearanceMode.isDark(systemIsDark: isDarkSystemAppearance)
-            ),
-            fontSize: petMetrics.activeCountFontSize(for: activeCount),
-            weight: .semibold,
-            tracking: activeCount >= 10 ? -0.15 : -0.05
-        )
-    }
 }
 
 private struct DetachedFloatingUsageBoltView: View {
@@ -1164,11 +1147,13 @@ private final class DetachedPetInteractionView: NSView {
     }
 }
 
-private struct DetachedFloatingMascotView: View {
+struct DetachedFloatingPetArtwork: View {
     let kind: MascotKind
     let status: MascotStatus
     let petMetrics: DetachedIslandPetMetrics
     let isDragging: Bool
+    let activeCount: Int
+    let countColor: Color
 
     private var renderSize: CGFloat {
         petMetrics.mascotDisplaySize * DetachedIslandPanelMetrics.mascotRenderScale
@@ -1193,6 +1178,23 @@ private struct DetachedFloatingMascotView: View {
         )
         .compositingGroup()
         .drawingGroup(opaque: false, colorMode: .linear)
+        .overlay(alignment: .bottomLeading) {
+            if activeCount > 0 {
+                PixelNumberView(
+                    value: activeCount,
+                    color: countColor,
+                    fontSize: petMetrics.activeCountFontSize(for: activeCount),
+                    weight: .semibold,
+                    tracking: activeCount >= 10 ? -0.15 : -0.05
+                )
+                // Anchor the text's leading edge outside the entire sprite,
+                // including keyboards, without moving the pet as the count grows.
+                .offset(
+                    x: petMetrics.mascotDisplaySize + petMetrics.activeCountGap,
+                    y: 2 * petMetrics.scale
+                )
+            }
+        }
         .allowsHitTesting(false)
     }
 }
