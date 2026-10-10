@@ -238,7 +238,8 @@ final class ClaudeTranscriptUsageLoaderTests: XCTestCase {
             totals: firstSnapshot.tokenTotals,
             capturedAt: firstSnapshot.capturedAt ?? now,
             sourceFileSize: firstSnapshot.fileSize,
-            sourceContentHash: firstSnapshot.contentHash
+            sourceContentHash: firstSnapshot.contentHash,
+            now: now
         )
         await store.recordTokenUsage(
             provider: .claude,
@@ -248,7 +249,8 @@ final class ClaudeTranscriptUsageLoaderTests: XCTestCase {
             totals: firstSnapshot.tokenTotals,
             capturedAt: firstSnapshot.capturedAt ?? now,
             sourceFileSize: firstSnapshot.fileSize,
-            sourceContentHash: firstSnapshot.contentHash
+            sourceContentHash: firstSnapshot.contentHash,
+            now: now
         )
 
         var snapshot = await store.snapshot(range: .today, now: now)
@@ -276,7 +278,8 @@ final class ClaudeTranscriptUsageLoaderTests: XCTestCase {
             totals: secondSnapshot.tokenTotals,
             capturedAt: secondSnapshot.capturedAt ?? now,
             sourceFileSize: secondSnapshot.fileSize,
-            sourceContentHash: secondSnapshot.contentHash
+            sourceContentHash: secondSnapshot.contentHash,
+            now: now
         )
 
         snapshot = await store.snapshot(range: .today, now: now)

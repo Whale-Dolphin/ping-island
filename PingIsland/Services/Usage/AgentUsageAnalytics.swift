@@ -911,7 +911,8 @@ actor AgentUsageStore {
             totals: currentUsage.totals,
             capturedAt: snapshot.capturedAt ?? now,
             sessionTitle: sessionTitle,
-            recordInitialSnapshot: false
+            recordInitialSnapshot: false,
+            now: now
         )
 
         var document = await loadDocument()

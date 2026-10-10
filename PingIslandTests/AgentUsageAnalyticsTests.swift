@@ -411,7 +411,7 @@ final class AgentUsageAnalyticsTests: XCTestCase {
             limitID: "codex",
             tokenUsage: CodexTokenUsage(inputTokens: 100, outputTokens: 50, totalTokens: 150),
             windows: []
-        ))
+        ), now: capturedAt)
         await store.recordCodexUsageSnapshot(CodexUsageSnapshot(
             sourceFilePath: sourcePath,
             capturedAt: capturedAt,
@@ -419,7 +419,7 @@ final class AgentUsageAnalyticsTests: XCTestCase {
             limitID: "codex",
             tokenUsage: CodexTokenUsage(inputTokens: 175, outputTokens: 80, totalTokens: 255),
             windows: []
-        ))
+        ), now: capturedAt)
         await store.recordCodexUsageSnapshot(
             CodexUsageSnapshot(
                 sourceFilePath: sourcePath,
@@ -429,7 +429,8 @@ final class AgentUsageAnalyticsTests: XCTestCase {
                 tokenUsage: CodexTokenUsage(inputTokens: 175, outputTokens: 80, totalTokens: 255),
                 windows: []
             ),
-            sessionTitle: "Display token usage by session title"
+            sessionTitle: "Display token usage by session title",
+            now: capturedAt
         )
 
         let snapshot = await store.snapshot(range: .today, now: capturedAt)
