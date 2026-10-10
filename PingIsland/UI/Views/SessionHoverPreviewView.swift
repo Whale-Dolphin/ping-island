@@ -1000,7 +1000,7 @@ private struct HoverPreviewRowBackground: View {
         if colorScheme == .dark {
             return isHighlighted
                 ? accentColor.opacity(0.9)
-                : Color.white.opacity(isHovered ? 0.55 : 0.44)
+                : Color.white.opacity(isHovered ? 0.55 : 0.50)
         }
         if isHighlighted {
             return accentColor.opacity(isHovered ? 0.34 : 0.26)
