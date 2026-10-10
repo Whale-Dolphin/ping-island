@@ -75,6 +75,22 @@ Dark cards have a visible outline even before hovering. The floating count start
 outside the full mascot canvas, with clearance proportional to pet scale; keyboards
 and two-digit counts must not overlap, and count changes must not move the pet anchor.
 
+#### Appearance previews
+
+The Settings capture shows the independent appearance menu. The panel and count
+previews are XCTest renders of the actual SwiftUI components with synthetic
+sessions, not live conversation data.
+
+![Independent appearance in Settings](images/experience-themes/appearance-settings.png)
+
+| Light | Dark |
+| --- | --- |
+| ![Light detached panel](images/experience-themes/appearance-panel-light.png) | ![Dark detached panel](images/experience-themes/appearance-panel-dark.png) |
+
+| One-digit count | Two-digit count |
+| --- | --- |
+| ![Pet with one-digit count](images/experience-themes/appearance-count-3.png) | ![Pet with two-digit count](images/experience-themes/appearance-count-99.png) |
+
 `AppAppearanceMode` owns the choice; experience tokens do not prescribe a color
 scheme. `AppearanceColors.swift` supplies dynamic AppKit-backed neutrals/palette
 variants that respect a window's effective appearance. Native backing-layer
